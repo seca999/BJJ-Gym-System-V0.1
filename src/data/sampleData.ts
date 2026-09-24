@@ -1,7 +1,7 @@
 import { Member, PaymentRecord, AttendanceRecord, ClassSession, GymSettings, Coach, SubscriptionPlan } from '../types';
 
 export const DEFAULT_SETTINGS: GymSettings = {
-  gymName: 'Arte Suave BJJ Academy',
+  gymName: 'Ravens BJJ Academy',
   slogan: 'Where Technique Conquers Strength • Honor, Discipline & Respect',
   currencySymbol: 'JOD',
   defaultCoach: 'Professor Lucas Silva',
