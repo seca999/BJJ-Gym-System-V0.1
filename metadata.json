@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix BJJ Gym Registration \u0026 Attendance Manager Newst Remix ",
+  "description": "Manage Brazilian Jiu-Jitsu student registrations, attendance check-ins, payment tracking, and remaining membership classes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

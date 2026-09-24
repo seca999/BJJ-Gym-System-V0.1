@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <!-- Filter for ink-bleed / dry-brush edge texture -->
+    <filter id="ink-texture" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" result="noise" />
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G" />
+    </filter>
+    <radialGradient id="raven-badge-bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="92%" stop-color="#f8fafc" />
+      <stop offset="100%" stop-color="#e2e8f0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Clean background badge circle -->
+  <circle cx="250" cy="250" r="235" fill="url(#raven-badge-bg)" stroke="#09090b" stroke-width="8" />
+  <circle cx="250" cy="250" r="226" fill="none" stroke="#71717a" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.6" />
+
+  <!-- The Painted Ink Brush Raven Facing Left -->
+  <g filter="url(#ink-texture)" fill="#09090b">
+    <!-- Beak and Crown -->
+    <path d="M155,142 C172,130 198,122 225,120 C250,118 280,126 295,145 C308,162 312,185 310,210 C306,230 295,250 290,270 C280,310 285,340 288,380 C290,400 292,425 285,440 C280,448 274,435 272,420 C269,400 268,375 264,350 C260,325 252,305 245,285 C238,265 230,248 220,230 C205,205 190,185 178,165 C165,152 155,145 155,142 Z" />
+    
+    <!-- Sharp Hooked Beak -->
+    <path d="M152,143 C140,147 128,154 115,165 C125,162 142,158 160,156 C175,154 185,152 175,150 C165,148 155,145 152,143 Z" />
+    <path d="M115,165 C128,167 145,171 162,174 C168,175 160,170 152,166 C138,162 125,164 115,165 Z" opacity="0.85" />
+
+    <!-- Throat & Breast Feather Ink Strokes -->
+    <path d="M178,170 C172,190 168,215 168,240 C168,265 174,290 178,315 C180,325 175,320 172,310 C166,290 162,265 163,240 C164,215 168,192 176,172 Z" />
+    <path d="M185,190 C182,215 180,245 182,275 C184,295 188,320 188,340 C187,352 184,345 182,330 C178,305 175,275 176,245 C177,220 181,195 185,190 Z" />
+    <path d="M198,210 C196,240 195,275 197,310 C198,335 200,360 200,380 C198,390 195,378 194,360 C192,330 191,295 193,260 C194,235 196,215 198,210 Z" />
+
+    <!-- Main Body and Back Feathers -->
+    <path d="M225,120 C240,120 260,126 275,138 C290,152 302,172 308,198 C314,225 316,255 314,288 C312,320 305,355 298,390 C294,415 288,438 280,458 C276,465 273,450 275,435 C280,405 288,370 292,335 C296,300 298,265 296,230 C294,195 285,168 270,148 C258,135 242,125 225,120 Z" />
+
+    <!-- Distressed Wing & Flank Feathers -->
+    <path d="M285,210 C292,240 298,275 300,310 C302,345 299,380 292,415 C288,435 283,455 278,470 C276,475 274,460 276,445 C282,415 288,380 290,345 C292,310 288,275 282,245 C280,230 282,215 285,210 Z" />
+    <path d="M305,240 C312,270 315,305 314,340 C313,375 307,410 298,442 C295,452 292,440 294,430 C301,400 306,368 307,335 C308,302 305,270 298,245 Z" />
+
+    <!-- Ink Splash and Tapering Tail Feathers -->
+    <path d="M260,350 C262,380 263,410 262,438 C261,452 258,460 256,455 C255,445 256,425 257,400 C258,375 259,355 260,350 Z" />
+    <path d="M245,320 C246,350 247,380 245,405 C244,415 241,420 240,412 C240,395 241,370 242,345 C243,330 244,320 245,320 Z" />
+    <path d="M275,440 L278,485 L273,480 L271,445 Z" />
+    <path d="M282,430 L286,478 L283,485 L280,440 Z" />
+    <path d="M288,410 L292,460 L289,468 L286,420 Z" />
+    <path d="M268,430 L270,470 L266,465 L265,435 Z" />
+
+    <!-- Subtle White Ink Feather Highlights (Creating feather depth) -->
+    <g fill="#ffffff" opacity="0.35">
+      <path d="M225,180 C230,205 236,230 240,255 C240,258 238,258 237,255 C233,230 228,205 223,180 Z" />
+      <path d="M245,195 C250,220 255,248 258,275 C258,278 256,278 255,275 C252,248 247,220 243,195 Z" />
+      <path d="M265,220 C270,250 274,280 275,310 C275,312 273,312 272,310 C271,280 267,250 262,220 Z" />
+      <path d="M278,260 C282,290 284,320 284,348 C284,350 282,350 282,348 C281,320 279,290 275,260 Z" />
+    </g>
+
+    <!-- Splatter & Ink Bristle Specks -->
+    <circle cx="130" cy="180" r="2.5" opacity="0.7" />
+    <circle cx="145" cy="205" r="2" opacity="0.6" />
+    <circle cx="158" cy="245" r="2.2" opacity="0.6" />
+    <circle cx="282" cy="492" r="2" opacity="0.5" />
+    <circle cx="275" cy="498" r="1.5" opacity="0.5" />
+    <circle cx="288" cy="488" r="1.8" opacity="0.6" />
+  </g>
+</svg>

@@ -1,0 +1,18 @@
+{
+  "version": "1.2.0-github-release",
+  "buildNumber": "2026.09.24.101",
+  "buildTimestamp": "2026-09-24T16:15:00Z",
+  "gitTracked": true,
+  "gitBranch": "main",
+  "databaseSeedVersion": "v7_canonical",
+  "releaseName": "Arte Suave BJJ Academy — GitHub Portable Release",
+  "changelog": [
+    "Embedded canonical database auto-seeder (src/data/academy_database.json)",
+    "IBJJF Belt & Age division transition engine",
+    "Matboard schedule & live student attendance check-ins",
+    "Tuition payments ledger supporting Credit Card, Cash, and Cliq",
+    "Cleaned layout redundancies and header dropdown list",
+    "Customizable header logo, slogan & brand color controls with 1:1 preview sync",
+    "GitHub deployment and portable multi-device support"
+  ]
+}
