@@ -436,7 +436,7 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
       const res = await checkForGitHubUpdates(customRepoInput, customBranchInput);
       setUpdateCheckResult({ checked: true, release: res.release, error: res.error });
       if (res.release?.isNewer) {
-        setUserSuccess(`New version ${res.release.releaseTag} found on GitHub!`);
+        setUserSuccess(`New version ${res.release.releaseTag} available!`);
         setTimeout(() => setUserSuccess(null), 4000);
       }
     } catch (err: any) {
@@ -1640,7 +1640,7 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                   <div>
                     <label className="block text-[11px] font-bold text-stone-300 uppercase mb-1">
-                      GitHub Repository (owner/repo)
+                      Repository (owner/repo)
                     </label>
                     <input
                       type="text"
@@ -1719,7 +1719,7 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                   ) : (
                     <div className="p-4 bg-emerald-950/40 border border-emerald-800 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span>Your application is fully up-to-date with GitHub repository master!</span>
+                      <span>Your application is fully up-to-date with the latest release!</span>
                     </div>
                   )}
                 </div>

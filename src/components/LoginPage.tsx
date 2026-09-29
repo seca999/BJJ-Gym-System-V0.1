@@ -69,17 +69,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ settings, onLoginSuccess, 
           </p>
         </div>
 
-        {/* Security Badge */}
-        <div className="mb-6 bg-stone-950/80 border border-stone-800 rounded-lg p-2.5 flex items-center justify-between text-xs text-stone-400">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <span>10m Inactivity Security Auto-Logout</span>
-          </div>
-          <span className="text-[10px] font-mono text-emerald-500 bg-emerald-950/60 border border-emerald-900/60 px-2 py-0.5 rounded">
-            Active
-          </span>
-        </div>
-
         {/* Security Timeout Notification */}
         {securityMessage && (
           <div className="mb-5 bg-stone-950 border border-stone-700 text-stone-200 text-xs rounded-xl p-3 flex items-start gap-2.5 shadow-md">

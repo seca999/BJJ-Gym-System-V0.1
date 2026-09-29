@@ -597,10 +597,10 @@ export const BeltBadge: React.FC<BeltBadgeProps> = ({
   const heightClass = size === 'sm' ? 'h-6 text-[10px]' : size === 'lg' ? 'h-8 text-xs' : 'h-7 text-xs';
 
   // Explicit pixel dimensions for rank sleeve and strictly fixed stripe slots
-  const sleeveWidth = size === 'sm' ? '38px' : size === 'lg' ? '50px' : '42px';
-  const sleevePadding = size === 'sm' ? 'pl-2 pr-1' : size === 'lg' ? 'pl-3 pr-2' : 'pl-2.5 pr-1.5';
-  const stripeGap = size === 'sm' ? '3px' : size === 'lg' ? '4px' : '3.5px';
-  const stripeWidth = size === 'sm' ? '3px' : size === 'lg' ? '4px' : '3.5px';
+  const sleeveWidth = size === 'sm' ? '38px' : size === 'lg' ? '54px' : '44px';
+  const sleevePadding = size === 'sm' ? 'px-2' : size === 'lg' ? 'px-2.5' : 'px-2';
+  const stripeGap = size === 'sm' ? '3px' : size === 'lg' ? '5px' : '4px';
+  const stripeWidth = size === 'sm' ? '3px' : size === 'lg' ? '5px' : '4px';
 
   return (
     <div className="inline-flex items-center gap-2 shrink-0">
