@@ -1,4 +1,4 @@
-import { Member, PaymentRecord, AttendanceRecord, ClassSession, GymSettings, Coach, TimetableConfig, SubscriptionPlan } from '../types';
+import { Member, PaymentRecord, AttendanceRecord, ClassSession, GymSettings, Coach, TimetableConfig, SubscriptionPlan, MerchItem, MerchSaleRecord, ExpenseRecord, RenewalReminderLog } from '../types';
 import { 
   DEFAULT_SETTINGS, 
   INITIAL_SUBSCRIPTION_PLANS,
@@ -6,21 +6,28 @@ import {
   INITIAL_CLASSES,
   INITIAL_COACHES,
   INITIAL_PAYMENTS,
-  INITIAL_ATTENDANCE
+  INITIAL_ATTENDANCE,
+  INITIAL_MERCH_ITEMS,
+  INITIAL_EXPENSES,
+  INITIAL_MERCH_SALES,
 } from '../data/sampleData';
-import { DEFAULT_TIMETABLE_CONFIG } from '../data/timetableData';
+import { DEFAULT_TIMETABLE_CONFIG, FIXED_6AM_10PM_SLOTS } from '../data/timetableData';
+import { parseTimeToMinutes, parseSlotStartMinutes, parseSlotEndMinutes } from './timeUtils';
 import canonicalDatabase from '../data/academy_database.json';
 
 const STORAGE_KEYS = {
-  INIT_FLAG: 'bjj_gym_initialized_v7',
-  MEMBERS: 'bjj_gym_members_v7',
-  PAYMENTS: 'bjj_gym_payments_v7',
-  ATTENDANCE: 'bjj_gym_attendance_v7',
-  CLASSES: 'bjj_gym_classes_v7',
-  SETTINGS: 'bjj_gym_settings_v7',
-  COACHES: 'bjj_gym_coaches_v7',
-  TIMETABLE: 'bjj_gym_timetable_v7',
-  PLANS: 'bjj_gym_plans_v7',
+  INIT_FLAG: 'bjj_gym_initialized_v11_matboard_grid_fixed',
+  MEMBERS: 'bjj_gym_members_v8',
+  PAYMENTS: 'bjj_gym_payments_v8',
+  ATTENDANCE: 'bjj_gym_attendance_v8',
+  CLASSES: 'bjj_gym_classes_v8',
+  SETTINGS: 'bjj_gym_settings_v8',
+  COACHES: 'bjj_gym_coaches_v8',
+  TIMETABLE: 'bjj_gym_timetable_v11_matboard',
+  PLANS: 'bjj_gym_plans_v8',
+  MERCH_PRODUCTS: 'bjj_gym_merch_products_v1',
+  MERCH_SALES: 'bjj_gym_merch_sales_v1',
+  EXPENSES: 'bjj_gym_expenses_v1',
 };
 
 /**
@@ -32,29 +39,18 @@ export function ensureInitializedFromCodeFiles(): void {
   try {
     const isInitialized = localStorage.getItem(STORAGE_KEYS.INIT_FLAG);
     if (!isInitialized) {
-      // First boot on this machine/browser: Seed directly from repository code files or fallback sample data
-      const seedMembers = canonicalDatabase.members && canonicalDatabase.members.length > 0 
-        ? canonicalDatabase.members 
-        : INITIAL_MEMBERS;
-      const seedClasses = canonicalDatabase.classes && canonicalDatabase.classes.length > 0
-        ? canonicalDatabase.classes
-        : INITIAL_CLASSES;
-      const seedCoaches = canonicalDatabase.coaches && canonicalDatabase.coaches.length > 0
-        ? canonicalDatabase.coaches
-        : INITIAL_COACHES;
-      const seedAttendance = canonicalDatabase.attendance && canonicalDatabase.attendance.length > 0
-        ? canonicalDatabase.attendance
-        : INITIAL_ATTENDANCE;
-      const seedPayments = canonicalDatabase.payments && canonicalDatabase.payments.length > 0
-        ? canonicalDatabase.payments
-        : INITIAL_PAYMENTS;
-      const seedPlans = canonicalDatabase.subscriptionPlans && canonicalDatabase.subscriptionPlans.length > 0
-        ? canonicalDatabase.subscriptionPlans
-        : INITIAL_SUBSCRIPTION_PLANS;
-      const seedTimetable = canonicalDatabase.timetableConfig && canonicalDatabase.timetableConfig.cells && canonicalDatabase.timetableConfig.cells.length > 0
-        ? canonicalDatabase.timetableConfig
-        : DEFAULT_TIMETABLE_CONFIG;
-      const seedSettings = canonicalDatabase.settings || DEFAULT_SETTINGS;
+      // First boot or upgrade to v10: Seed with clean, realistic dummy data
+      const seedMembers = INITIAL_MEMBERS;
+      const seedClasses = INITIAL_CLASSES;
+      const seedCoaches = INITIAL_COACHES;
+      const seedAttendance = INITIAL_ATTENDANCE;
+      const seedPayments = INITIAL_PAYMENTS;
+      const seedPlans = INITIAL_SUBSCRIPTION_PLANS;
+      const seedTimetable = DEFAULT_TIMETABLE_CONFIG;
+      const seedSettings = DEFAULT_SETTINGS;
+      const seedExpenses = INITIAL_EXPENSES;
+      const seedMerch = INITIAL_MERCH_ITEMS;
+      const seedSales = INITIAL_MERCH_SALES;
 
       localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(seedMembers));
       localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(seedClasses));
@@ -64,7 +60,10 @@ export function ensureInitializedFromCodeFiles(): void {
       localStorage.setItem(STORAGE_KEYS.PLANS, JSON.stringify(seedPlans));
       localStorage.setItem(STORAGE_KEYS.TIMETABLE, JSON.stringify(seedTimetable));
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(seedSettings));
-      localStorage.setItem('bjj_gym_ibjjf_transfers_v1', JSON.stringify(canonicalDatabase.ibjjfTransfers || []));
+      localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(seedExpenses));
+      localStorage.setItem(STORAGE_KEYS.MERCH_PRODUCTS, JSON.stringify(seedMerch));
+      localStorage.setItem(STORAGE_KEYS.MERCH_SALES, JSON.stringify(seedSales));
+      localStorage.setItem('bjj_gym_ibjjf_transfers_v1', JSON.stringify([]));
       localStorage.setItem(STORAGE_KEYS.INIT_FLAG, 'true');
     }
   } catch (e) {
@@ -276,15 +275,132 @@ export function saveCoaches(coaches: Coach[]): void {
   }
 }
 
+export function loadMerchProducts(): MerchItem[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.MERCH_PRODUCTS);
+    if (!data) {
+      saveMerchProducts(INITIAL_MERCH_ITEMS);
+      return INITIAL_MERCH_ITEMS;
+    }
+    const parsed = JSON.parse(data);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    return INITIAL_MERCH_ITEMS;
+  } catch (err) {
+    console.error('Failed to load merch products from localStorage', err);
+    return INITIAL_MERCH_ITEMS;
+  }
+}
+
+export function saveMerchProducts(products: MerchItem[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.MERCH_PRODUCTS, JSON.stringify(products));
+    triggerDiskDatabaseSync();
+  } catch (err) {
+    console.error('Failed to save merch products to localStorage', err);
+  }
+}
+
+export function loadMerchSales(): MerchSaleRecord[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.MERCH_SALES);
+    if (!data) {
+      saveMerchSales(INITIAL_MERCH_SALES);
+      return INITIAL_MERCH_SALES;
+    }
+    const parsed = JSON.parse(data);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    return INITIAL_MERCH_SALES;
+  } catch (err) {
+    console.error('Failed to load merch sales from localStorage', err);
+    return INITIAL_MERCH_SALES;
+  }
+}
+
+export function saveMerchSales(sales: MerchSaleRecord[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.MERCH_SALES, JSON.stringify(sales));
+    triggerDiskDatabaseSync();
+  } catch (err) {
+    console.error('Failed to save merch sales to localStorage', err);
+  }
+}
+
+export function loadExpenses(): ExpenseRecord[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.EXPENSES);
+    if (!data) {
+      saveExpenses(INITIAL_EXPENSES);
+      return INITIAL_EXPENSES;
+    }
+    const parsed = JSON.parse(data);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    return INITIAL_EXPENSES;
+  } catch (err) {
+    console.error('Failed to load expenses from localStorage', err);
+    return INITIAL_EXPENSES;
+  }
+}
+
+export function saveExpenses(expenses: ExpenseRecord[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
+    triggerDiskDatabaseSync();
+  } catch (err) {
+    console.error('Failed to save expenses to localStorage', err);
+  }
+}
+
+export function normalizeFixedTimetable(config: TimetableConfig): TimetableConfig {
+  if (!config || !Array.isArray(config.slots) || config.slots.length === 0) {
+    return DEFAULT_TIMETABLE_CONFIG;
+  }
+
+  // Remap cells to matching fixed 30-minute slots based on start time
+  const mappedCells = (config.cells || []).map((cell) => {
+    const existingSlot = config.slots.find((s) => s.id === cell.slotId);
+    const cellTimeRange = cell.timeRange || existingSlot?.timeRange || '4:30 - 5:30 PM';
+    const sMin = parseSlotStartMinutes(cellTimeRange);
+    const eMin = parseSlotEndMinutes(cellTimeRange);
+
+    let targetSlot = FIXED_6AM_10PM_SLOTS.find((s) => {
+      const slotMin = parseSlotStartMinutes(s.timeRange);
+      return sMin >= slotMin && sMin < slotMin + 30;
+    });
+
+    if (!targetSlot) {
+      targetSlot = sMin < 360 ? FIXED_6AM_10PM_SLOTS[0] : FIXED_6AM_10PM_SLOTS[FIXED_6AM_10PM_SLOTS.length - 1];
+    }
+
+    const duration = Math.max(15, eMin - sMin);
+    const spanSlots = Math.max(1, Math.round(duration / 30));
+
+    return {
+      ...cell,
+      slotId: targetSlot.id,
+      timeRange: cellTimeRange,
+      spanSlots,
+    };
+  });
+
+  return {
+    ...config,
+    slots: FIXED_6AM_10PM_SLOTS,
+    cells: mappedCells,
+  };
+}
+
 export function loadTimetableConfig(): TimetableConfig {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.TIMETABLE);
     if (!data) {
       const fallback = (canonicalDatabase.timetableConfig as TimetableConfig) || DEFAULT_TIMETABLE_CONFIG;
-      saveTimetableConfig(fallback);
-      return fallback;
+      const normalizedFallback = normalizeFixedTimetable(fallback);
+      saveTimetableConfig(normalizedFallback);
+      return normalizedFallback;
     }
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    const normalized = normalizeFixedTimetable(parsed);
+    return normalized;
   } catch (err) {
     console.error('Failed to load timetable config from localStorage', err);
     return DEFAULT_TIMETABLE_CONFIG;
@@ -392,6 +508,9 @@ export async function loadSampleDemoData(): Promise<void> {
     subscriptionPlans: INITIAL_SUBSCRIPTION_PLANS,
     timetableConfig: DEFAULT_TIMETABLE_CONFIG,
     settings: currentSettings,
+    expenses: INITIAL_EXPENSES,
+    merchProducts: INITIAL_MERCH_ITEMS,
+    merchSales: INITIAL_MERCH_SALES,
     ibjjfTransfers: [],
   };
 
@@ -403,6 +522,9 @@ export async function loadSampleDemoData(): Promise<void> {
   localStorage.setItem(STORAGE_KEYS.PLANS, JSON.stringify(INITIAL_SUBSCRIPTION_PLANS));
   localStorage.setItem(STORAGE_KEYS.TIMETABLE, JSON.stringify(DEFAULT_TIMETABLE_CONFIG));
   localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(currentSettings));
+  localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(INITIAL_EXPENSES));
+  localStorage.setItem(STORAGE_KEYS.MERCH_PRODUCTS, JSON.stringify(INITIAL_MERCH_ITEMS));
+  localStorage.setItem(STORAGE_KEYS.MERCH_SALES, JSON.stringify(INITIAL_MERCH_SALES));
   localStorage.setItem('bjj_gym_ibjjf_transfers_v1', JSON.stringify([]));
   localStorage.setItem(STORAGE_KEYS.INIT_FLAG, 'true');
 
@@ -470,3 +592,44 @@ export function importBackupJSON(jsonStr: string): boolean {
     return false;
   }
 }
+
+export function loadReminderLogs(): RenewalReminderLog[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem('bjj_gym_renewal_reminder_logs_v1');
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveReminderLogs(logs: RenewalReminderLog[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('bjj_gym_renewal_reminder_logs_v1', JSON.stringify(logs));
+  } catch (e) {
+    console.error('Failed to save reminder logs:', e);
+  }
+}
+
+export function loadCoachPaidMap(): Record<string, { isPaid: boolean; paidAmount?: number; paidDate?: string; paymentMethod?: string; notes?: string }> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem('bjj_gym_coach_paid_map_v1');
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+export function saveCoachPaidMap(map: Record<string, { isPaid: boolean; paidAmount?: number; paidDate?: string; paymentMethod?: string; notes?: string }>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('bjj_gym_coach_paid_map_v1', JSON.stringify(map));
+  } catch (e) {
+    console.error('Failed to save coach paid map:', e);
+  }
+}
+

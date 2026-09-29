@@ -19,7 +19,9 @@ import {
   Users,
   Plus,
   Award,
-  GraduationCap
+  GraduationCap,
+  Copy,
+  Check
 } from 'lucide-react';
 import { Member, BeltRank, MembershipType, ClassCategory, Coach, AttendanceRecord, ClassSession } from '../types';
 import { BeltBadge, BELT_RANKS, KIDS_BELT_RANKS, TEENS_BELT_RANKS, ADULT_BELT_RANKS, getBeltsForAgeGroup } from '../utils/bjjBelts';
@@ -40,6 +42,7 @@ interface MemberListProps {
   onUpdateCoach?: (updatedCoach: Coach) => void;
   onDeleteCoach?: (coachId: string) => void;
   onNavigateTab?: (tab: 'renewals') => void;
+  theme?: 'light' | 'dark';
 }
 
 export const MemberList: React.FC<MemberListProps> = ({
@@ -55,6 +58,7 @@ export const MemberList: React.FC<MemberListProps> = ({
   onUpdateCoach,
   onDeleteCoach,
   onNavigateTab,
+  theme = 'dark',
 }) => {
   const [directorySubPage, setDirectorySubPage] = useState<'students' | 'coaches'>('students');
   const [photoModalMember, setPhotoModalMember] = useState<Member | null>(null);
@@ -63,6 +67,16 @@ export const MemberList: React.FC<MemberListProps> = ({
   const [ageGroupFilter, setAgeGroupFilter] = useState<string>('ALL');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<'name' | 'classes' | 'attendance' | 'recent'>('name');
+  const [copiedMemberId, setCopiedMemberId] = useState<string | null>(null);
+
+  const handleCopyName = (e: React.MouseEvent, fullName: string, memberId: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(fullName);
+    setCopiedMemberId(memberId);
+    setTimeout(() => {
+      setCopiedMemberId((prev) => (prev === memberId ? null : prev));
+    }, 1800);
+  };
 
   const activeMembers = members.filter(m => !m.isDeleted);
 
@@ -138,37 +152,52 @@ export const MemberList: React.FC<MemberListProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Sub-Pages Directory Navigation Bar */}
-      <div className="flex items-center gap-2 bg-stone-900 p-2 rounded-2xl border border-stone-800 shadow-sm">
-        <button
-          type="button"
-          onClick={() => setDirectorySubPage('students')}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black inline-flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            directorySubPage === 'students'
-              ? 'bg-red-600 text-white shadow-md'
-              : 'text-stone-400 hover:text-white hover:bg-stone-800'
-          }`}
-        >
-          <Users className="w-4 h-4 text-blue-400" />
-          <span>Students Directory ({activeMembers.length})</span>
-        </button>
+      {/* Sub-Pages Directory Navigation Bar with Inline Register Action */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-stone-900 p-2 rounded-2xl border border-stone-800 shadow-sm">
+        <div className="flex items-center gap-2 flex-1">
+          <button
+            type="button"
+            onClick={() => setDirectorySubPage('students')}
+            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black inline-flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              directorySubPage === 'students'
+                ? 'bg-red-600 text-white shadow-md'
+                : 'text-stone-400 hover:text-white hover:bg-stone-800'
+            }`}
+          >
+            <Users className="w-4 h-4 text-blue-400" />
+            <span>Students Directory ({activeMembers.length})</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setDirectorySubPage('coaches')}
-          className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black inline-flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            directorySubPage === 'coaches'
-              ? 'bg-red-600 text-white shadow-md'
-              : 'text-stone-400 hover:text-white hover:bg-stone-800'
-          }`}
-        >
-          <Award className="w-4 h-4 text-amber-400" />
-          <span>Coaches & Instructors ({coaches.length})</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setDirectorySubPage('coaches')}
+            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black inline-flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              directorySubPage === 'coaches'
+                ? 'bg-red-600 text-white shadow-md'
+                : 'text-stone-400 hover:text-white hover:bg-stone-800'
+            }`}
+          >
+            <Award className="w-4 h-4 text-amber-400" />
+            <span>Coaches & Instructors ({coaches.length})</span>
+          </button>
+        </div>
+
+        {/* Action Button: Register New Student */}
+        {directorySubPage === 'students' && (
+          <button
+            type="button"
+            onClick={onOpenNewMember}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold tracking-wide transition-all shadow-sm shrink-0 cursor-pointer active:scale-95"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>+ Register New Student</span>
+          </button>
+        )}
       </div>
 
       {directorySubPage === 'coaches' ? (
         <CoachesDirectoryView
+          theme={theme}
           coaches={coaches}
           attendance={attendance}
           classes={classes}
@@ -178,23 +207,6 @@ export const MemberList: React.FC<MemberListProps> = ({
         />
       ) : (
         <>
-          {/* Top Header & Actions Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-stone-900 p-4 rounded-xl border border-stone-800">
-            <div>
-              <h2 className="text-lg font-bold text-white">Student Directory & Rosters</h2>
-              <p className="text-xs text-stone-400">
-                View student belt ranks, remaining membership classes, and payment standings.
-              </p>
-            </div>
-
-            <button
-              onClick={onOpenNewMember}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold tracking-wide transition-colors shadow-xs"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>+ Register New Student</span>
-            </button>
-          </div>
 
       {/* Main Division Filter Bar (Kids, Teens, Adults) */}
       <div className="bg-stone-900 p-2 sm:p-2.5 rounded-xl border border-stone-800 flex items-center justify-between gap-2 flex-wrap shadow-xs">
@@ -466,10 +478,31 @@ export const MemberList: React.FC<MemberListProps> = ({
                           </div>
 
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-white text-sm group-hover:text-red-400 transition-colors">
                                 {member.fullName}
                               </span>
+
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopyName(e, member.fullName, member.id)}
+                                title={copiedMemberId === member.id ? 'Copied name to clipboard!' : `Copy "${member.fullName}"`}
+                                className={`p-1 rounded-md transition-all inline-flex items-center gap-1 text-[11px] cursor-pointer active:scale-95 ${
+                                  copiedMemberId === member.id
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                                    : 'text-stone-400 hover:text-white hover:bg-stone-800 border border-transparent'
+                                }`}
+                              >
+                                {copiedMemberId === member.id ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span className="font-mono text-[10px] font-bold">Copied</span>
+                                  </>
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+
                               {(() => {
                                 const div = resolveMemberDivision(member);
                                 const compAge = member.birthDate ? calculateIBJJFCompetitionAge(member.birthDate) : member.age;

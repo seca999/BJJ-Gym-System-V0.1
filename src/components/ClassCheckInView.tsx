@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
+import { addAuditLog } from '../utils/auditLogger';
 import { 
   Calendar, 
   Clock, 
   Users, 
+  User,
   UserCheck, 
   Check, 
   Search, 
@@ -38,13 +40,16 @@ import {
   CheckCircle,
   AlertTriangle,
   BookOpen,
-  Tag
+  Tag,
+  Crosshair,
+  Copy
 } from 'lucide-react';
 import { Member, ClassSession, AttendanceRecord, Coach, ClassCategory, TimetableConfig, TimetableDay } from '../types';
 import { BeltBadge, checkStudentClassEligibility, ClassEligibilityCheck } from '../utils/bjjBelts';
 import { EditClassModal } from './EditClassModal';
+import { MatVisionAttendanceModal } from './MatVisionAttendanceModal';
 import { getMatboardClassesForDay, resolveTimetableDay, TIMETABLE_DAY_TO_FULL } from '../utils/matboardSchedule';
-import { parseTimeToMinutes } from '../utils/timeUtils';
+import { parseTimeToMinutes, getJordanCurrentMinutes } from '../utils/timeUtils';
 import {
   GymWeek,
   GymDayInfo,
@@ -59,6 +64,7 @@ import {
 } from '../utils/weekUtils';
 
 interface ClassCheckInViewProps {
+  theme?: 'dark' | 'light';
   classes: ClassSession[];
   timetableConfig?: TimetableConfig;
   members: Member[];
@@ -78,6 +84,8 @@ interface ClassCheckInViewProps {
   onOpenPaymentForMember?: (memberId: string) => void;
   onOpenSubscriptionPlans?: () => void;
   initialClassId?: string | null;
+  initialSubSection?: 'group' | 'vip';
+  onSubSectionChange?: (sub: 'group' | 'vip') => void;
 }
 
 // Sound feedback for check-in using Web Audio API
@@ -142,6 +150,7 @@ function playBlockBuzzer() {
 }
 
 export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
+  theme = 'dark',
   classes,
   timetableConfig,
   members,
@@ -155,7 +164,27 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
   onOpenPaymentForMember,
   onOpenSubscriptionPlans,
   initialClassId,
+  initialSubSection,
+  onSubSectionChange,
 }) => {
+  const isLight = theme === 'light';
+
+  // Section switcher: 'group' for scheduled mat classes, 'vip' for private 1-on-1 sessions
+  const [activeSection, setActiveSection] = useState<'group' | 'vip'>(initialSubSection || 'group');
+  const [vipStudentSearch, setVipStudentSearch] = useState('');
+  const [isMatVisionModalOpen, setIsMatVisionModalOpen] = useState(false);
+
+  const handleSwitchSection = (sub: 'group' | 'vip') => {
+    setActiveSection(sub);
+    onSubSectionChange?.(sub);
+  };
+
+  React.useEffect(() => {
+    if (initialSubSection) {
+      setActiveSection(initialSubSection);
+    }
+  }, [initialSubSection]);
+
   // Current date in local time
   const todayStr = useMemo(() => getTodayDateStr(), []);
   const initialYear = useMemo(() => parseISODate(todayStr).getFullYear(), [todayStr]);
@@ -344,6 +373,16 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
   // Multi-select for batch check-in
   const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([]);
   const [checkInFeedback, setCheckInFeedback] = useState<{ memberName: string; remaining: number; action?: 'checkin' | 'refund' } | null>(null);
+  const [copiedStudentId, setCopiedStudentId] = useState<string | null>(null);
+
+  const handleCopyName = (e: React.MouseEvent, fullName: string, targetId: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(fullName);
+    setCopiedStudentId(targetId);
+    setTimeout(() => {
+      setCopiedStudentId((prev) => (prev === targetId ? null : prev));
+    }, 1800);
+  };
 
   // Modal for explaining ineligibility reason
   const [ineligibleModalInfo, setIneligibleModalInfo] = useState<{
@@ -360,6 +399,66 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
   const [classToEdit, setClassToEdit] = useState<ClassSession | null>(null);
   const [classToDelete, setClassToDelete] = useState<ClassSession | null>(null);
 
+  // Private 1-on-1 Classes & 121 Personal Training State
+  const [isPrivateModalOpen, setIsPrivateModalOpen] = useState(false);
+  const [privateStudentId, setPrivateStudentId] = useState('');
+  const [privateCoachName, setPrivateCoachName] = useState('');
+  const [privateFocus, setPrivateFocus] = useState('');
+  const [privateTime, setPrivateTime] = useState('14:00');
+  const [privateStudentSearch, setPrivateStudentSearch] = useState('');
+
+  // Filter attendance records that belong to Private 1-on-1 sessions
+  const privateAttendanceRecords = useMemo(() => {
+    return attendance.filter((a) => {
+      const isPriv =
+        a.className.toLowerCase().includes('private') ||
+        a.className.toLowerCase().includes('1:1') ||
+        a.className.toLowerCase().includes('121') ||
+        a.className.toLowerCase().includes('vip') ||
+        a.notes?.toLowerCase().includes('private') ||
+        a.notes?.toLowerCase().includes('vip');
+      return isPriv;
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }, [attendance]);
+
+  const privateAttendanceForSelectedDate = useMemo(() => {
+    return privateAttendanceRecords.filter((a) => a.date === selectedDate);
+  }, [privateAttendanceRecords, selectedDate]);
+
+  const handleRecordPrivateSession = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!privateStudentId) {
+      alert('Please select a student for the private 1-on-1 session.');
+      return;
+    }
+    const student = members.find((m) => m.id === privateStudentId);
+    if (!student) return;
+
+    const coachToUse = privateCoachName || (coaches.find((c) => c.active)?.fullName || 'Head Coach');
+    const topicToUse = privateFocus.trim() || 'Personal 1-on-1 Technique Lesson';
+    const dateToUse = selectedDate || todayStr;
+
+    const res = onCheckIn(
+      student.id,
+      `Private 1:1 Session (${topicToUse})`,
+      coachToUse,
+      student.ageGroup || 'Adults',
+      dateToUse
+    );
+
+    playCheckInChime();
+    setCheckInFeedback({
+      memberName: student.fullName,
+      remaining: res.remainingAfter,
+      action: 'checkin',
+    });
+
+    setIsPrivateModalOpen(false);
+    setPrivateStudentId('');
+    setPrivateFocus('');
+    setPrivateStudentSearch('');
+  };
+
   // Active Day of Week: strictly resolved to TimetableDay ('SAT' | 'SUN' | 'MON' | ...)
   const activeDayOfWeek: TimetableDay = useMemo(() => {
     if (activeDayFilter && activeDayFilter !== 'TODAY' && activeDayFilter !== 'ALL') {
@@ -373,10 +472,69 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
   }, [activeDayOfWeek, selectedDayInfo]);
 
   // STAGE 1 LOGIC: Matboard is the official reference for what is scheduled each day!
-  // If the matboard does not have anything on a Sunday, classesForDay is strictly []!
-  const classesForDay = useMemo(() => {
+  const rawMatboardClassesForDay = useMemo(() => {
     return getMatboardClassesForDay(activeDayOfWeek, timetableConfig, classes, coaches);
   }, [activeDayOfWeek, timetableConfig, classes, coaches]);
+
+  // Group classes: strictly non-VIP classes
+  const groupClassesForDay = useMemo(() => {
+    return rawMatboardClassesForDay.filter((c) => {
+      if (c.isVip || c.type === 'VIP') return false;
+      const matched = classes.find(
+        (rc) => rc.id === (c as any).registeredClassId || rc.id === c.id
+      );
+      if (matched?.isVip || matched?.type === 'VIP') return false;
+      return true;
+    });
+  }, [rawMatboardClassesForDay, classes]);
+
+  // VIP classes: strictly VIP 121 classes for this day (from matboard or registered classes matching this day)
+  const vipClassesForDay = useMemo(() => {
+    const dayFull = currentDayName.toLowerCase();
+    const dayShort = selectedDayInfo.dayShort.toLowerCase();
+    const dayCode = activeDayOfWeek.toLowerCase();
+
+    // From matboard
+    const fromMatboard = rawMatboardClassesForDay
+      .filter((c) => {
+        if (c.isVip || c.type === 'VIP') return true;
+        const matched = classes.find(
+          (rc) => rc.id === (c as any).registeredClassId || rc.id === c.id
+        );
+        return Boolean(matched?.isVip || matched?.type === 'VIP');
+      })
+      .map((c) => ({ ...c, isVip: true, type: 'VIP' }));
+
+    // From registered classes matching this day
+    const fromRegistered: ClassSession[] = [];
+    classes.forEach((rc) => {
+      if (!rc.isVip && rc.type !== 'VIP') return;
+      const days = (rc.daysOfWeek || []).map((d) => d.toLowerCase());
+      const hasDay =
+        days.includes(dayFull) ||
+        days.includes(dayShort) ||
+        days.includes(dayCode) ||
+        (rc.daySchedule &&
+          Object.keys(rc.daySchedule).some((k) => k.toLowerCase() === dayFull || k.toLowerCase() === dayShort));
+
+      const alreadyOnMatboard = fromMatboard.some(
+        (mc) => (mc as any).registeredClassId === rc.id || mc.id === rc.id
+      );
+      if (hasDay && !alreadyOnMatboard) {
+        fromRegistered.push({
+          ...rc,
+          id: rc.id,
+          isVip: true,
+          type: 'VIP',
+        });
+      }
+    });
+
+    return [...fromMatboard, ...fromRegistered];
+  }, [rawMatboardClassesForDay, classes, currentDayName, selectedDayInfo, activeDayOfWeek]);
+
+  // Active classes for check-in: strictly group classes in Group section, VIP in VIP section
+  const classesForDay = activeSection === 'vip' ? vipClassesForDay : groupClassesForDay;
 
   // Set initial selected class if none is selected, strictly from classesForDay
   React.useEffect(() => {
@@ -423,9 +581,9 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
     return new Set(attendeesForClass.map((a) => a.memberId));
   }, [attendeesForClass]);
 
-  // Filter students for the check-in list
+  // Filter & Smart-Sort students for the check-in list
   const filteredStudents = useMemo(() => {
-    return members.filter((m) => {
+    const list = members.filter((m) => {
       if (m.isDeleted) return false;
 
       // Category match
@@ -459,6 +617,35 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
       }
 
       return true;
+    });
+
+    if (!selectedClass) {
+      return list.sort((a, b) => a.fullName.localeCompare(b.fullName));
+    }
+
+    // Smart Sorting when checking into a specific class:
+    // 1. Eligible students first, Ineligible / Blocked students at the bottom
+    // 2. Exact class division match boost (e.g., Kids in Kids Class, Adults in Adult Class)
+    // 3. Unchecked students above checked-in students
+    // 4. Alphabetical by full name
+    return list.sort((a, b) => {
+      const eligA = checkStudentClassEligibility(a, selectedClass);
+      const eligB = checkStudentClassEligibility(b, selectedClass);
+
+      if (eligA.isEligible && !eligB.isEligible) return -1;
+      if (!eligA.isEligible && eligB.isEligible) return 1;
+
+      const categoryMatchA = a.ageGroup === selectedClass.category;
+      const categoryMatchB = b.ageGroup === selectedClass.category;
+      if (categoryMatchA && !categoryMatchB) return -1;
+      if (!categoryMatchA && categoryMatchB) return 1;
+
+      const checkedA = checkedInMemberIds.has(a.id);
+      const checkedB = checkedInMemberIds.has(b.id);
+      if (!checkedA && checkedB) return -1;
+      if (checkedA && !checkedB) return 1;
+
+      return a.fullName.localeCompare(b.fullName);
     });
   }, [members, categoryFilter, eligibilityFilter, statusFilter, studentSearch, checkedInMemberIds, selectedClass]);
 
@@ -547,7 +734,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
   const getClassTypeColor = (type: string) => {
     const t = type.toLowerCase();
     if (t.includes('wrestl')) {
-      return 'bg-amber-950 text-amber-300 border-amber-800/90';
+      return 'bg-stone-800 text-stone-200 border-stone-700';
     }
     if (t.includes('morning')) {
       return 'bg-sky-950 text-sky-300 border-sky-800/90';
@@ -572,7 +759,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
 
     const startMinutes = parseTimeToMinutes(parts[0]);
     const endMinutes = parts.length > 1 ? parseTimeToMinutes(parts[1]) : startMinutes + 60;
-    const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+    const { totalMinutes: currentMinutes } = getJordanCurrentMinutes(currentTime);
 
     if (currentMinutes >= startMinutes && currentMinutes <= endMinutes) {
       const remainingMinutes = endMinutes - currentMinutes;
@@ -589,12 +776,16 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
       return {
         status: 'UPCOMING',
         label: timeLabel,
-        badgeClass: 'bg-amber-950/80 text-amber-300 border-amber-600/70',
+        badgeClass: 'bg-stone-800 text-stone-300 border-stone-600/70',
       };
     } else {
+      const elapsed = currentMinutes - endMinutes;
+      const hours = Math.floor(elapsed / 60);
+      const mins = elapsed % 60;
+      const elapsedLabel = hours > 0 ? `Concluded ${hours}h ${mins}m ago` : `Concluded ${mins}m ago`;
       return {
         status: 'COMPLETED',
-        label: 'Session Concluded',
+        label: elapsedLabel,
         badgeClass: 'bg-stone-850 text-stone-400 border-stone-700/60',
       };
     }
@@ -624,13 +815,21 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                 Mat Attendance & Class Check-In
               </h1>
             </div>
-            <p className="text-xs sm:text-sm text-stone-400 mt-1">
-              Enforces strict IBJJF age & belt validation. Access all 52 weeks of the year to check in students for current or future sessions.
-            </p>
           </div>
 
           {/* Action Buttons: Manage Classes & Subscription Plans */}
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Tap-Less Mat Vision Attendance Kiosk */}
+            <button
+              type="button"
+              onClick={() => setIsMatVisionModalOpen(true)}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-black inline-flex items-center gap-1.5 transition-all shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
+              title="Open AI Face Recognition & Mat ROI Vision Attendance Kiosk"
+            >
+              <Crosshair className="w-4 h-4 text-emerald-200 animate-pulse" />
+              <span>🥋 Tap-Less Mat Vision Kiosk</span>
+            </button>
+
             {/* Manage Classes */}
             <button
               type="button"
@@ -650,21 +849,93 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
               <button
                 type="button"
                 onClick={onOpenSubscriptionPlans}
-                className="px-3.5 py-1.5 bg-stone-850 hover:bg-stone-800 text-amber-400 hover:text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-sm hover:shadow-md cursor-pointer"
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-sm hover:shadow-md cursor-pointer ${
+                  isLight
+                    ? 'bg-stone-800 hover:bg-stone-900 text-white border border-stone-700'
+                    : 'bg-stone-800 hover:bg-stone-750 text-stone-200 hover:text-white border border-stone-700'
+                }`}
                 title="Edit 8-class, 12-class, and Unlimited subscription plans for Kids, Teens, and Adults"
               >
-                <Tag className="w-4 h-4 text-amber-400" />
+                <Tag className="w-4 h-4 text-red-400" />
                 <span>Subscription Plans & Pricing</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Row 2: Training Days Navigation Bar (Matboard Reference) */}
-        <div className="pt-3 border-t border-stone-800/80 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1 text-xs font-semibold text-stone-400">
-            <CalendarDays className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-[11px] uppercase tracking-wider font-bold text-stone-300">Schedule Day (Matboard):</span>
+        {/* Section Switcher Tabs: Separated Mat Check-in vs Dedicated VIP 121 Section */}
+        <div className={`pt-3 border-t flex items-center justify-between gap-3 flex-wrap ${
+          isLight ? 'border-stone-200' : 'border-stone-800/80'
+        }`}>
+          <div className={`flex items-center gap-2 p-1.5 border rounded-2xl w-full sm:w-auto shadow-inner ${
+            isLight ? 'bg-stone-100 border-stone-200' : 'bg-stone-950/90 border border-stone-800'
+          }`}>
+            <button
+              type="button"
+              onClick={() => handleSwitchSection('group')}
+              className={`flex-1 sm:flex-initial px-5 py-2 rounded-xl font-black text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                activeSection === 'group'
+                  ? 'bg-red-600 text-white shadow-md'
+                  : isLight
+                  ? 'text-stone-700 hover:text-stone-950 hover:bg-stone-200/80 font-bold'
+                  : 'text-stone-400 hover:text-white hover:bg-stone-900 font-bold'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>Group Classes</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-black ${
+                activeSection === 'group'
+                  ? 'bg-black/30 text-white'
+                  : isLight
+                  ? 'bg-stone-200 text-stone-800'
+                  : 'bg-black/40 text-white'
+              }`}>
+                {groupClassesForDay.length} Classes
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSwitchSection('vip')}
+              className={`flex-1 sm:flex-initial px-5 py-2 rounded-xl font-black text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                activeSection === 'vip'
+                  ? 'bg-red-700 text-white shadow-md font-black'
+                  : isLight
+                  ? 'text-stone-800 bg-stone-100 hover:bg-stone-200 border border-stone-300 font-bold'
+                  : 'text-stone-300 hover:text-white hover:bg-stone-850 border border-stone-700 font-bold'
+              }`}
+            >
+              <Sparkles className={`w-4 h-4 ${activeSection === 'vip' ? 'text-white fill-current' : 'text-red-400 fill-current'}`} />
+              <span>VIP 121 Section</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-black ${
+                activeSection === 'vip'
+                  ? 'bg-black/40 text-white'
+                  : isLight
+                  ? 'bg-stone-200 text-stone-800 border border-stone-300 font-bold'
+                  : 'bg-stone-900 text-stone-300 border border-stone-800'
+              }`}>
+                {vipClassesForDay.length} Scheduled • {privateAttendanceForSelectedDate.length} Today
+              </span>
+            </button>
+          </div>
+
+          <div className={`text-xs font-medium ${isLight ? 'text-stone-600' : 'text-stone-400'}`}>
+            {activeSection === 'group' ? (
+              <span>Viewing: <strong className={isLight ? 'text-stone-900' : 'text-white'}>Group Classes Timetable & Roster</strong></span>
+            ) : (
+              <span className={isLight ? 'text-red-900 font-bold' : 'text-red-400 font-bold'}>Viewing: VIP 1:1 Hub</span>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2: Training Days Navigation Bar (Matboard Reference) - Only in Group Section */}
+        {activeSection === 'group' && (
+          <div className={`pt-3 border-t flex items-center justify-between gap-2 flex-wrap ${
+            isLight ? 'border-stone-200' : 'border-stone-800/80'
+          }`}>
+          <div className="flex items-center gap-1 text-xs font-semibold">
+            <CalendarDays className={`w-3.5 h-3.5 ${isLight ? 'text-stone-700' : 'text-red-400'}`} />
+            <span className={`text-[11px] uppercase tracking-wider font-bold ${isLight ? 'text-stone-800' : 'text-stone-300'}`}>Schedule Day (Matboard):</span>
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
@@ -682,13 +953,15 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                     isSelected
                       ? 'bg-red-600 text-white shadow-md'
+                      : isLight
+                      ? 'bg-stone-100 text-stone-700 hover:text-stone-950 hover:bg-stone-200 border border-stone-200 font-semibold'
                       : 'bg-stone-950 text-stone-400 hover:text-white hover:bg-stone-800 border border-stone-800'
                   }`}
                 >
                   <span>{TIMETABLE_DAY_TO_FULL[d]}</span>
                   {isLiveToday && (
                     <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-black uppercase ${
-                      isSelected ? 'bg-black/30 text-white' : 'bg-emerald-500/20 text-emerald-400'
+                      isSelected ? 'bg-black/30 text-white' : isLight ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-emerald-500/20 text-emerald-400'
                     }`}>
                       Today
                     </span>
@@ -698,7 +971,11 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                       isSelected
                         ? 'bg-white/20 text-white'
                         : dayClasses.length > 0
-                        ? 'bg-stone-800 text-amber-300'
+                        ? isLight
+                          ? 'bg-stone-200 text-stone-900 border border-stone-300'
+                          : 'bg-stone-800 text-stone-300'
+                        : isLight
+                        ? 'bg-stone-200 text-stone-500'
                         : 'bg-stone-900 text-stone-600'
                     }`}
                     title={`${dayClasses.length} sessions on Matboard for ${TIMETABLE_DAY_TO_FULL[d]}`}
@@ -710,10 +987,14 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
             })}
           </div>
         </div>
+        )}
       </div>
 
-      {/* TODAY'S & SELECTED DAY'S CLASSES GALLERY (MATBOARD SINGLE SOURCE OF TRUTH) */}
-      <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
+      {/* GROUP CLASSES MAT CHECK-IN SECTION */}
+      {activeSection === 'group' && (
+        <div className="space-y-6">
+          {/* TODAY'S & SELECTED DAY'S CLASSES GALLERY (MATBOARD SINGLE SOURCE OF TRUTH) */}
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-stone-800/80">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-red-950/80 border border-red-800/80 flex items-center justify-center text-red-400">
@@ -812,7 +1093,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                           <span className="text-stone-600">•</span>
                           <span className={
                             classItem.category === 'Kids'
-                              ? 'text-amber-400 font-semibold'
+                              ? 'text-emerald-400 font-semibold'
                               : classItem.category === 'Teens'
                               ? 'text-blue-400 font-semibold'
                               : 'text-stone-300 font-medium'
@@ -838,17 +1119,9 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                     {/* Coach Info */}
                     <div className="mt-3 pt-2.5 border-t border-stone-900 flex items-center justify-between text-xs">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        {assignedCoach?.avatar ? (
-                          <img
-                            src={assignedCoach.avatar}
-                            alt={assignedCoach.fullName}
-                            className="w-5 h-5 rounded-full object-cover border border-stone-700 shrink-0"
-                          />
-                        ) : (
-                          <div className="w-5 h-5 rounded-full bg-stone-800 text-stone-300 font-bold text-[9px] flex items-center justify-center border border-stone-700 shrink-0">
-                            {(classItem.headCoachName || classItem.coach || 'C').charAt(0)}
-                          </div>
-                        )}
+                        <div className="w-5 h-5 rounded-full bg-stone-800 text-stone-300 font-bold text-[9px] flex items-center justify-center border border-stone-700 shrink-0">
+                          <User className="w-3 h-3 text-stone-400" />
+                        </div>
                         <span className="text-stone-300 font-medium text-[11px] truncate">
                           {classItem.headCoachName || classItem.coach || 'Head Coach'}
                         </span>
@@ -894,49 +1167,17 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
       {/* ACTIVE CLASS CHECK-IN STATION */}
       {selectedClass ? (
         <div className="bg-stone-900 border border-stone-800 rounded-2xl overflow-hidden shadow-2xl">
-          {/* IBJJF DIVISION & SAFETY NOTICE BANNER */}
-          <div className={`px-4 py-3 border-b flex items-start gap-3 ${
-            selectedClass.category === 'Kids'
-              ? 'bg-amber-950/40 border-amber-800/60 text-amber-200'
-              : selectedClass.category === 'Teens'
-              ? 'bg-blue-950/40 border-blue-800/60 text-blue-200'
-              : 'bg-stone-950 border-stone-800 text-stone-300'
-          }`}>
-            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
-            <div className="text-xs leading-relaxed flex-1">
-              {selectedClass.category === 'Kids' && (
-                <div>
-                  <strong className="text-amber-300">Strict IBJJF Youth Rules Enforced:</strong> Kids classes strictly admit youth students (ages 4-15) holding IBJJF Youth Belts (White, Grey, Yellow, Orange, Green). Adults & Teens are strictly barred from check-in. Adult belts (Blue, Purple, Brown, Black) are prohibited.
-                </div>
-              )}
-              {selectedClass.category === 'Teens' && (
-                <div>
-                  <strong className="text-blue-300">Teens / Juvenile Rules:</strong> Students ages 16-17 holding White, Blue, or Purple belts. Adult and Kids students cannot be checked into this class.
-                </div>
-              )}
-              {selectedClass.category === 'Adults' && (
-                <div>
-                  <strong className="text-stone-200">Adult Class:</strong> Members 18+ holding adult ranks (White through Black). Youth students are barred from adult full-contact sparring.
-                </div>
-              )}
-              {selectedClass.category === 'All Levels' && (
-                <div>
-                  <strong className="text-stone-200">Open Mat Session:</strong> Supervised training under designated Head Coach and Assistant Coaches.
-                </div>
-              )}
-            </div>
-          </div>
           {/* Feedback banner if checked in or refunded */}
           {checkInFeedback && (
             <div className={`px-4 py-2.5 border-b text-xs sm:text-sm font-semibold flex items-center justify-between animate-fadeIn ${
               checkInFeedback.action === 'refund'
                 ? 'bg-blue-950/90 border-blue-800 text-blue-200'
                 : checkInFeedback.remaining < 0
-                ? 'bg-amber-950/90 border-amber-800 text-amber-200'
+                ? 'bg-red-950/90 border-red-800 text-red-200'
                 : 'bg-emerald-950/80 border-emerald-800 text-emerald-200'
             }`}>
               <div className="flex items-center gap-2">
-                <CheckCircle2 className={`w-4 h-4 shrink-0 ${checkInFeedback.action === 'refund' ? 'text-blue-400' : checkInFeedback.remaining < 0 ? 'text-amber-400' : 'text-emerald-400'}`} />
+                <CheckCircle2 className={`w-4 h-4 shrink-0 ${checkInFeedback.action === 'refund' ? 'text-blue-400' : checkInFeedback.remaining < 0 ? 'text-red-400' : 'text-emerald-400'}`} />
                 <span>
                   {checkInFeedback.action === 'refund' ? (
                     <span>
@@ -946,7 +1187,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                     <span>
                       <strong>{checkInFeedback.memberName}</strong> was added to roster (consumed 1 class)!
                       {checkInFeedback.remaining < 0 && (
-                        <span className="ml-1.5 font-bold text-amber-300">
+                        <span className="ml-1.5 font-bold text-red-300">
                           (Class Debt: {Math.abs(checkInFeedback.remaining)} class{Math.abs(checkInFeedback.remaining) > 1 ? 'es' : ''} — will be deducted upon renewal)
                         </span>
                       )}
@@ -1109,7 +1350,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                     No students matching your filter criteria.
                   </div>
                 ) : (
-                  filteredStudents.map((m) => {
+                  filteredStudents.map((m, index) => {
                     const isCheckedIn = checkedInMemberIds.has(m.id);
                     const isUnlimited = m.membershipType === 'monthly_unlimited';
                     const isDebt = !isUnlimited && m.classesRemaining < 0;
@@ -1122,21 +1363,39 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                       ? checkStudentClassEligibility(m, selectedClass)
                       : { isEligible: true };
 
+                    const isFirstIneligible = Boolean(
+                      selectedClass && 
+                      !eligibility.isEligible && 
+                      (index === 0 || checkStudentClassEligibility(filteredStudents[index - 1], selectedClass).isEligible)
+                    );
+
                     return (
-                      <div
-                        key={m.id}
-                        className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                          isCheckedIn
-                            ? 'bg-emerald-950/20 border-emerald-800/50'
-                            : !eligibility.isEligible
-                            ? 'bg-red-950/15 border-red-900/60'
-                            : isDebt
-                            ? 'bg-red-950/25 border-red-800/70'
-                            : isZero
-                            ? 'bg-amber-950/20 border-amber-800/60'
-                            : 'bg-stone-950/80 hover:bg-stone-950 border-stone-800 hover:border-stone-700'
-                        }`}
-                      >
+                      <React.Fragment key={m.id}>
+                        {isFirstIneligible && (
+                          <div className="pt-4 pb-2 my-1 border-t border-stone-800">
+                            <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-800/80 flex items-center justify-between text-xs">
+                              <span className="font-extrabold text-red-300 flex items-center gap-1.5">
+                                <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" />
+                                <span>Ineligible / Division Blocked / Out of Credits ({filteredStudents.filter(s => selectedClass && !checkStudentClassEligibility(s, selectedClass).isEligible).length})</span>
+                              </span>
+                              <span className="text-[10px] text-red-400 font-semibold hidden sm:inline">Sorted to bottom per IBJJF rules</span>
+                            </div>
+                          </div>
+                        )}
+
+                        <div
+                          className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                            isCheckedIn
+                              ? 'bg-emerald-950/20 border-emerald-800/50'
+                              : !eligibility.isEligible
+                              ? 'bg-red-950/15 border-red-900/60'
+                              : isDebt
+                              ? 'bg-red-950/25 border-red-800/70'
+                              : isZero
+                              ? 'bg-amber-950/20 border-amber-800/60'
+                              : 'bg-stone-950/80 hover:bg-stone-950 border-stone-800 hover:border-stone-700'
+                          }`}
+                        >
                         <div className="flex items-start gap-3 min-w-0">
                           {/* Checkbox for batch: disabled if ineligible */}
                           {!isCheckedIn && (
@@ -1160,26 +1419,6 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                             />
                           )}
 
-                          {/* Student Avatar */}
-                          <div 
-                            className="shrink-0 cursor-pointer mt-0.5"
-                            onClick={() => onSelectMember && onSelectMember(m)}
-                            title="View student profile"
-                          >
-                            {m.avatar ? (
-                              <img
-                                src={m.avatar}
-                                alt={m.fullName}
-                                className="w-10 h-10 rounded-full object-cover border border-stone-700 shadow-xs"
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-stone-800 text-amber-400 font-bold text-xs flex items-center justify-center border border-stone-700 shadow-xs">
-                                {m.fullName.charAt(0)}
-                              </div>
-                            )}
-                          </div>
-
                           {/* Info */}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -1189,6 +1428,27 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                               >
                                 {m.fullName}
                               </span>
+
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopyName(e, m.fullName, m.id)}
+                                title={copiedStudentId === m.id ? 'Copied name to clipboard!' : `Copy "${m.fullName}"`}
+                                className={`p-1 rounded-md transition-all inline-flex items-center gap-1 text-[11px] cursor-pointer active:scale-95 ${
+                                  copiedStudentId === m.id
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                                    : 'text-stone-400 hover:text-white hover:bg-stone-800 border border-transparent'
+                                }`}
+                              >
+                                {copiedStudentId === m.id ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span className="font-mono text-[10px] font-bold">Copied</span>
+                                  </>
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={() => onSelectMember && onSelectMember(m)}
@@ -1202,7 +1462,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                               {m.ageGroup && (
                                 <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
                                   m.ageGroup === 'Kids' 
-                                    ? 'bg-amber-950/70 text-amber-300 border-amber-800' 
+                                    ? 'bg-emerald-950/70 text-emerald-300 border-emerald-800' 
                                     : m.ageGroup === 'Teens'
                                     ? 'bg-blue-950/70 text-blue-300 border-blue-800'
                                     : 'bg-stone-800 text-stone-300 border-stone-700'
@@ -1245,11 +1505,11 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                                   <span>Debt: {Math.abs(m.classesRemaining)} class{Math.abs(m.classesRemaining) > 1 ? 'es' : ''} (Deducted on renewal)</span>
                                 </span>
                               ) : isZero ? (
-                                <span className="text-[10px] text-amber-300 font-bold bg-amber-950/80 px-1.5 py-0.5 rounded border border-amber-700/80">
+                                <span className="text-[10px] text-stone-300 font-bold bg-stone-800 px-1.5 py-0.5 rounded border border-stone-700">
                                   0 Classes (Will record debt)
                                 </span>
                               ) : isLow ? (
-                                <span className="text-[10px] text-amber-400 font-semibold bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-800/80">
+                                <span className="text-[10px] text-stone-300 font-semibold bg-stone-800 px-1.5 py-0.2 rounded border border-stone-700">
                                   {m.classesRemaining} left
                                 </span>
                               ) : (
@@ -1264,7 +1524,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                                   title={`Emergency Contact: ${m.emergencyContact.name} (${m.emergencyContact.phone}) - ${m.emergencyContact.relation || 'Emergency Contact'}`}
                                 >
                                   • ICE: <span className="text-stone-300">{m.emergencyContact.name}</span>{' '}
-                                  <span className="text-amber-400 font-semibold">({m.emergencyContact.relation || 'Contact'})</span>
+                                  <span className="text-red-400 font-semibold">({m.emergencyContact.relation || 'Contact'})</span>
                                 </span>
                               )}
                             </div>
@@ -1347,8 +1607,9 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                           )}
                         </div>
                       </div>
-                    );
-                  })
+                    </React.Fragment>
+                  );
+                })
                 )}
               </div>
             </div>
@@ -1394,20 +1655,6 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                           <span className="text-[10px] text-stone-500 font-bold w-4 text-right">
                             #{idx + 1}
                           </span>
-
-                          {/* Avatar */}
-                          {student?.avatar ? (
-                            <img
-                              src={student.avatar}
-                              alt={a.memberName}
-                              className="w-8 h-8 rounded-full object-cover border border-stone-700 shrink-0"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-stone-800 text-amber-400 font-bold text-xs flex items-center justify-center border border-stone-700 shrink-0">
-                              {a.memberName.charAt(0)}
-                            </div>
-                          )}
 
                           <div className="min-w-0">
                             <span 
@@ -1492,6 +1739,124 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
           </div>
         </div>
       )}
+        </div>
+      )}
+
+      {/* 👑 EXCLUSIVE VIP 121 PRIVATE SESSIONS STATION */}
+      {activeSection === 'vip' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* VIP Student Directory & 1-on-1 Balances Manager */}
+          <div className={`border rounded-3xl p-5 sm:p-7 shadow-xl space-y-4 ${
+            isLight ? 'bg-white border-stone-200 text-stone-900' : 'bg-stone-900 border-stone-800 text-white'
+          }`}>
+            <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b ${
+              isLight ? 'border-stone-200' : 'border-stone-800'
+            }`}>
+              <div>
+                <h3 className={`text-base sm:text-lg font-black tracking-tight flex items-center gap-2 ${
+                  isLight ? 'text-stone-900' : 'text-white'
+                }`}>
+                  <Users className="w-5 h-5 text-red-500" />
+                  <span>VIP Student Directory & 1-on-1 Balances</span>
+                </h3>
+                <p className={`text-xs mt-0.5 ${isLight ? 'text-stone-600 font-medium' : 'text-stone-400'}`}>
+                  Select any student to immediately log a private 1-on-1 session or check their remaining package balance.
+                </p>
+              </div>
+
+              {/* Student Search in VIP Roster */}
+              <div className="relative w-full sm:w-64">
+                <Search className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isLight ? 'text-stone-500' : 'text-stone-400'}`} />
+                <input
+                  type="text"
+                  value={vipStudentSearch}
+                  onChange={(e) => setVipStudentSearch(e.target.value)}
+                  placeholder="Search students for VIP..."
+                  className={`w-full pl-9 pr-3 py-2 border rounded-xl text-xs font-medium focus:outline-none focus:border-red-500 ${
+                    isLight ? 'bg-stone-100 border-stone-300 text-stone-900 placeholder-stone-500' : 'bg-stone-950 border-stone-800 text-white placeholder-stone-500'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Students Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto pr-1">
+              {members
+                .filter((m) => {
+                  if (!vipStudentSearch.trim()) return true;
+                  const q = vipStudentSearch.toLowerCase();
+                  return (
+                    m.fullName.toLowerCase().includes(q) ||
+                    m.phone.toLowerCase().includes(q) ||
+                    m.beltRank.toLowerCase().includes(q)
+                  );
+                })
+                .slice(0, 30)
+                .map((m) => {
+                  const isUnlimited = m.membershipType === 'monthly_unlimited';
+                  return (
+                    <div
+                      key={m.id}
+                      className={`p-3 border rounded-2xl flex items-center justify-between gap-3 transition-all ${
+                        isLight
+                          ? 'bg-stone-50 border-stone-200 hover:border-red-400 text-stone-900 shadow-xs'
+                          : 'bg-stone-950 border-stone-800/80 hover:border-red-500/50 text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className={`text-xs font-black truncate ${isLight ? 'text-stone-900' : 'text-white'}`}>{m.fullName}</h4>
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyName(e, m.fullName, `vip-${m.id}`)}
+                              title={copiedStudentId === `vip-${m.id}` ? 'Copied name to clipboard!' : `Copy "${m.fullName}"`}
+                              className={`p-1 rounded-md transition-all inline-flex items-center gap-1 text-[10px] cursor-pointer active:scale-95 ${
+                                copiedStudentId === `vip-${m.id}`
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                                  : isLight
+                                  ? 'text-stone-500 hover:text-stone-900 hover:bg-stone-200 border border-transparent'
+                                  : 'text-stone-400 hover:text-white hover:bg-stone-800 border border-transparent'
+                              }`}
+                            >
+                              {copiedStudentId === `vip-${m.id}` ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  <span className="font-mono text-[9px] font-bold">Copied</span>
+                                </>
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <BeltBadge belt={m.beltRank} stripes={m.stripes} size="sm" />
+                            <span className={`text-[10px] font-bold ${isLight ? 'text-stone-600' : 'text-stone-400'}`}>
+                              {isUnlimited ? 'Unlimited' : `${m.classesRemaining} left`}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrivateStudentId(m.id);
+                          setIsPrivateModalOpen(true);
+                        }}
+                        className="px-3 py-1.5 rounded-xl text-xs font-black transition-all inline-flex items-center gap-1 shrink-0 cursor-pointer shadow-xs bg-red-600 hover:bg-red-700 text-white"
+                        title={`Record VIP 121 session for ${m.fullName}`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5 fill-current" />
+                        <span>Book 1:1</span>
+                      </button>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* IBJJF INELIGIBILITY EXPLANATION MODAL */}
       {ineligibleModalInfo && (
@@ -1527,7 +1892,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
               </div>
               <div className="flex items-center justify-between text-stone-400 border-b border-stone-800/80 pb-2">
                 <span>Rank & Division:</span>
-                <span className="text-amber-400 font-bold">{ineligibleModalInfo.studentBelt} Belt ({ineligibleModalInfo.studentAgeGroup})</span>
+                <span className="text-stone-300 font-bold">{ineligibleModalInfo.studentBelt} Belt ({ineligibleModalInfo.studentAgeGroup})</span>
               </div>
               <div className="flex items-center justify-between text-stone-400">
                 <span>Attempted Class:</span>
@@ -1800,7 +2165,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                               Current
                             </span>
                           ) : isFuture ? (
-                            <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-extrabold uppercase tracking-wider">
+                            <span className="px-2 py-0.5 rounded-md bg-stone-800 text-stone-200 border border-stone-700 text-[9px] font-extrabold uppercase tracking-wider">
                               Upcoming
                             </span>
                           ) : (
@@ -1812,7 +2177,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
 
                         {/* Middle: Date Range */}
                         <div className="mb-2.5">
-                          <div className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors">
+                          <div className="text-xs font-bold text-white group-hover:text-red-400 transition-colors">
                             {w.days[0].monthShort} {w.days[0].dayOfMonth} – {w.days[6].monthShort} {w.days[6].dayOfMonth}, {w.year}
                           </div>
                           <div className="text-[10px] text-stone-400 mt-0.5">
@@ -1840,7 +2205,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                         {/* Action Callout */}
                         <div className="mt-2 text-right">
                           <span className={`text-[10px] font-bold inline-flex items-center gap-1 transition-colors ${
-                            isSelected ? 'text-red-400' : 'text-stone-500 group-hover:text-amber-400'
+                            isSelected ? 'text-red-400' : 'text-stone-500 group-hover:text-red-400'
                           }`}>
                             <span>{isSelected ? 'Active Selection' : 'Open Schedule'}</span>
                             <ArrowRight className="w-3 h-3" />
@@ -1861,7 +2226,7 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
                   <span>Current Active Week</span>
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
                   <span>Upcoming Future Weeks</span>
                 </span>
                 <span className="flex items-center gap-1.5">
@@ -1894,6 +2259,222 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
         coaches={coaches}
         onSaveClass={onSaveClass}
         onDeleteClass={onDeleteClass}
+      />
+
+      {/* PRIVATE 1-ON-1 CLASS CHECK-IN MODAL */}
+      {isPrivateModalOpen && (() => {
+        const targetStudent = members.find((m) => m.id === privateStudentId);
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className={`border rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-scaleIn ${
+              isLight ? 'bg-white border-stone-300 text-stone-900' : 'bg-stone-900 border-stone-800 text-white'
+            }`}>
+              <div className={`p-4 sm:p-5 border-b flex items-center justify-between ${
+                isLight ? 'border-stone-200 bg-stone-50' : 'border-stone-800 bg-stone-950'
+              }`}>
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-red-600/20 border border-red-600/40 rounded-xl text-red-500">
+                    <Sparkles className="w-5 h-5 fill-red-500/20" />
+                  </div>
+                  <div>
+                    <h3 className={`text-base font-black ${isLight ? 'text-stone-900' : 'text-white'}`}>Record Private 1-on-1 Lesson</h3>
+                    <p className={`text-xs ${isLight ? 'text-stone-600 font-medium' : 'text-stone-400'}`}>Check in a student for a 1:1 personal training session</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPrivateModalOpen(false)}
+                  className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
+                    isLight ? 'text-stone-500 hover:text-stone-900 hover:bg-stone-200' : 'text-stone-400 hover:text-white hover:bg-stone-800'
+                  }`}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleRecordPrivateSession} className="p-4 sm:p-6 space-y-4 text-xs">
+                {/* Pre-selected Student Banner or Student Picker */}
+                {targetStudent ? (
+                  <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 shadow-xs ${
+                    isLight ? 'bg-stone-100 border-stone-300 text-stone-900' : 'bg-stone-950 border-stone-800 text-white'
+                  }`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className={`text-sm font-black truncate ${isLight ? 'text-stone-950' : 'text-white'}`}>{targetStudent.fullName}</h4>
+                          <span className="px-2.5 py-0.5 rounded-full bg-red-600 text-white font-black text-[10px] uppercase tracking-wider shadow-2xs">
+                            Selected Student
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs mt-1 font-semibold flex-wrap">
+                          <BeltBadge belt={targetStudent.beltRank} stripes={targetStudent.stripes} size="sm" />
+                          <span>•</span>
+                          <span className={isLight ? 'text-stone-700 font-bold' : 'text-stone-300 font-bold'}>
+                            {targetStudent.classesRemaining < 0 ? 'Unlimited Plan' : `${targetStudent.classesRemaining} classes left`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setPrivateStudentId('')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-xl shrink-0 cursor-pointer border transition-colors ${
+                        isLight ? 'bg-white hover:bg-stone-100 text-stone-800 border-stone-300' : 'bg-stone-800 hover:bg-stone-700 text-stone-200 border-stone-700'
+                      }`}
+                      title="Change selected student"
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <label className={`block text-xs font-bold mb-1 ${isLight ? 'text-stone-800' : 'text-stone-300'}`}>
+                      Select Student *
+                    </label>
+                    <div className="relative mb-2">
+                      <Search className={`w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 ${isLight ? 'text-stone-500' : 'text-stone-400'}`} />
+                      <input
+                        type="text"
+                        value={privateStudentSearch}
+                        onChange={(e) => setPrivateStudentSearch(e.target.value)}
+                        placeholder="Search student by name or belt..."
+                        className={`w-full border rounded-xl pl-8 pr-3 py-2 text-xs font-medium focus:outline-none focus:border-red-500 ${
+                          isLight ? 'bg-stone-100 border-stone-300 text-stone-900 placeholder-stone-500' : 'bg-stone-950 border-stone-700 text-white placeholder-stone-500'
+                        }`}
+                      />
+                    </div>
+                    <select
+                      required
+                      value={privateStudentId}
+                      onChange={(e) => setPrivateStudentId(e.target.value)}
+                      className={`w-full border rounded-xl px-3 py-2.5 text-xs font-bold focus:outline-none focus:border-red-500 cursor-pointer ${
+                        isLight ? 'bg-white border-stone-300 text-stone-900' : 'bg-stone-950 border-stone-700 text-white'
+                      }`}
+                    >
+                      <option value="">-- Select Student for Private Lesson --</option>
+                      {members
+                        .filter((m) => !m.isDeleted)
+                        .filter((m) =>
+                          !privateStudentSearch.trim() ||
+                          m.fullName.toLowerCase().includes(privateStudentSearch.toLowerCase()) ||
+                          m.beltRank.toLowerCase().includes(privateStudentSearch.toLowerCase())
+                        )
+                        .map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.fullName} ({m.beltRank} Belt) — {m.classesRemaining < 0 ? 'Unlimited' : `${m.classesRemaining} classes left`}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Select Coach */}
+                <div>
+                  <label className={`block text-xs font-bold mb-1 ${isLight ? 'text-stone-800' : 'text-stone-300'}`}>
+                    Private Instructor / Coach *
+                  </label>
+                  <select
+                    value={privateCoachName}
+                    onChange={(e) => setPrivateCoachName(e.target.value)}
+                    className={`w-full border rounded-xl px-3 py-2.5 text-xs font-bold focus:outline-none focus:border-red-500 cursor-pointer ${
+                      isLight ? 'bg-white border-stone-300 text-stone-900' : 'bg-stone-950 border-stone-700 text-white'
+                    }`}
+                  >
+                    <option value="">-- Choose Instructor --</option>
+                    {coaches
+                      .filter((c) => c.active && !c.isDeleted)
+                      .map((c) => (
+                        <option key={c.id} value={c.fullName}>
+                          {c.fullName} ({c.beltRank} Belt)
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                {/* Private Focus / Topic */}
+                <div>
+                  <label className={`block text-xs font-bold mb-1 ${isLight ? 'text-stone-800' : 'text-stone-300'}`}>
+                    Lesson Topic / Technique Focus
+                  </label>
+                  <input
+                    type="text"
+                    value={privateFocus}
+                    onChange={(e) => setPrivateFocus(e.target.value)}
+                    placeholder="e.g., De La Riva Guard Sweeps, Leg Drag, Sparring Strategy"
+                    className={`w-full border rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-red-500 ${
+                      isLight ? 'bg-stone-50 border-stone-300 text-stone-900 placeholder-stone-400' : 'bg-stone-950 border-stone-700 text-white placeholder-stone-500'
+                    }`}
+                  />
+                </div>
+
+                {/* Date & Time */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={`block text-xs font-bold mb-1 ${isLight ? 'text-stone-800' : 'text-stone-300'}`}>
+                      Lesson Date
+                    </label>
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      disabled
+                      className={`w-full border rounded-xl px-3 py-2 text-xs cursor-not-allowed font-mono font-bold ${
+                        isLight ? 'bg-stone-100 border-stone-300 text-stone-700' : 'bg-stone-950/60 border-stone-800 text-stone-400'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-xs font-bold mb-1 ${isLight ? 'text-stone-800' : 'text-stone-300'}`}>
+                      Lesson Time
+                    </label>
+                    <input
+                      type="text"
+                      value={privateTime}
+                      onChange={(e) => setPrivateTime(e.target.value)}
+                      placeholder="14:00"
+                      className={`w-full border rounded-xl px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:border-red-500 ${
+                        isLight ? 'bg-white border-stone-300 text-stone-900' : 'bg-stone-950 border-stone-700 text-white'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className={`pt-3 border-t flex items-center justify-end gap-2 ${isLight ? 'border-stone-200' : 'border-stone-800'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setIsPrivateModalOpen(false)}
+                    className={`px-4 py-2 font-bold text-xs rounded-xl transition-colors cursor-pointer ${
+                      isLight ? 'bg-stone-200 hover:bg-stone-300 text-stone-800' : 'bg-stone-800 hover:bg-stone-700 text-stone-300'
+                    }`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl text-xs transition-all shadow-md cursor-pointer active:scale-95"
+                  >
+                    Confirm 121 Check-In
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Tap-Less Mat Vision & Face Recognition Attendance Kiosk Modal */}
+      <MatVisionAttendanceModal
+        isOpen={isMatVisionModalOpen}
+        onClose={() => setIsMatVisionModalOpen(false)}
+        members={members}
+        classes={classes}
+        coaches={coaches}
+        attendance={attendance}
+        onCheckIn={onCheckIn}
+        onUndoCheckIn={onUndoCheckIn}
+        theme={theme}
       />
     </div>
   );

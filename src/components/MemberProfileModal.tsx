@@ -19,7 +19,9 @@ import {
   Camera,
   Upload,
   Trash2,
-  Sparkles
+  Sparkles,
+  Copy,
+  Check
 } from 'lucide-react';
 import { Member, AttendanceRecord, PaymentRecord, BeltRank, StripeCount, ClassCategory } from '../types';
 import { BeltBadge, getBeltsForAgeGroup } from '../utils/bjjBelts';
@@ -62,8 +64,21 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'attendance' | 'payments' | 'edit'>('attendance');
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [copiedName, setCopiedName] = useState(false);
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const editDobInputRef = useRef<HTMLInputElement>(null);
+
+  const handleCopyName = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (member?.fullName) {
+      navigator.clipboard.writeText(member.fullName);
+      setCopiedName(true);
+      setTimeout(() => {
+        setCopiedName(false);
+      }, 1800);
+    }
+  };
 
   // Editing state
   const [isEditing, setIsEditing] = useState(false);
@@ -184,8 +199,27 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
             </div>
 
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-lg font-bold text-white">{member.fullName}</h2>
+                <button
+                  type="button"
+                  onClick={handleCopyName}
+                  title={copiedName ? 'Copied name to clipboard!' : `Copy "${member.fullName}"`}
+                  className={`p-1 rounded-md transition-all inline-flex items-center gap-1 text-[11px] cursor-pointer active:scale-95 ${
+                    copiedName
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                      : 'text-stone-400 hover:text-white hover:bg-stone-800 border border-transparent'
+                  }`}
+                >
+                  {copiedName ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="font-mono text-[10px] font-bold">Copied</span>
+                    </>
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                </button>
                 <span
                   className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                     isZero
@@ -586,7 +620,7 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
                   className="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors"
                 >
                   <PlusCircle className="w-3.5 h-3.5" />
-                  <span>+ Record Payment</span>
+                  <span>+ Renew Plan / Top-Up</span>
                 </button>
               </div>
 
@@ -1009,15 +1043,7 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
                 {onDeleteMember && (
                   <button
                     type="button"
-                    onClick={() => {
-                      const confirmDelete = window.confirm(
-                        `Are you sure you want to delete / archive the student "${member.fullName}"?\n\nThey will be removed from lists and rosters, but their past attendance logs and payment ledger history will remain intact for future reference.`
-                      );
-                      if (confirmDelete) {
-                        onDeleteMember(member.id);
-                        onClose();
-                      }
-                    }}
+                    onClick={() => setShowDeleteConfirm(true)}
                     className="px-4 py-2 bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-800/60 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -1036,6 +1062,61 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Delete Student In-App Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl border border-red-500/40 bg-stone-900 text-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-500 shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-white">Delete / Archive Student?</h3>
+                <p className="text-xs text-stone-400">Please confirm this action</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-stone-800 bg-stone-950 space-y-1.5 text-xs">
+              <div className="font-bold text-sm text-white">{member.fullName}</div>
+              <div className="text-stone-400 flex items-center gap-2">
+                <span>Rank: <strong className="text-stone-200">{member.beltRank} Belt ({member.stripes} stripes)</strong></span>
+                <span>•</span>
+                <span>Type: <strong className="text-stone-200">{member.membershipType === 'class_pack' ? 'Class Pack' : 'Unlimited'}</strong></span>
+              </div>
+              {member.phone && <div className="text-stone-400">Phone: {member.phone}</div>}
+            </div>
+
+            <p className="text-xs leading-relaxed text-stone-300">
+              Are you sure you want to delete and archive <strong className="text-white">"{member.fullName}"</strong>? They will be removed from all active class rosters, check-in lists, and directory, but their historical attendance and payment records will be preserved.
+            </p>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-stone-800 hover:bg-stone-700 text-stone-300 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onDeleteMember) {
+                    onDeleteMember(member.id);
+                  }
+                  setShowDeleteConfirm(false);
+                  onClose();
+                }}
+                className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Yes, Confirm Deletion</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Student Photo Modal */}
       <StudentPhotoModal

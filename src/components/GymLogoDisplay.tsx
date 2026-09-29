@@ -28,17 +28,14 @@ export const GymLogoDisplay: React.FC<GymLogoDisplayProps> = ({
     ? sizeOverride.height
     : Math.max(configuredHeight, minimumThreshold);
 
-  const borderRadius = logo?.borderRadius ?? 12;
+  const borderRadius = logo?.borderRadius ?? 0;
   const isCircle = borderRadius >= 90 || logo?.borderRadius === 9999;
   
   const finalWidth = isCircle ? Math.max(width, height) : width;
   const finalHeight = isCircle ? Math.max(width, height) : height;
 
-  const borderWidth = logo?.borderWidth ?? 1;
-  const borderColor = logo?.borderColor ?? '#dc2626';
   const fit = logo?.fit ?? 'contain';
   const padding = logo?.padding ?? 0;
-  const backgroundColor = logo?.backgroundColor ?? '#7f1d1d';
   const url = logo?.url;
   const preset = logo?.preset ?? 'emblem-shield';
 
@@ -46,8 +43,10 @@ export const GymLogoDisplay: React.FC<GymLogoDisplayProps> = ({
     width: `${finalWidth}px`,
     height: `${finalHeight}px`,
     borderRadius: isCircle ? '9999px' : `${borderRadius}px`,
-    border: 'none', // Remove border entirely as requested
-    backgroundColor: backgroundColor || 'transparent',
+    border: '0px none transparent',
+    outline: 'none',
+    boxShadow: 'none',
+    backgroundColor: 'transparent',
     padding: `${padding}px`,
   };
 
@@ -57,16 +56,22 @@ export const GymLogoDisplay: React.FC<GymLogoDisplayProps> = ({
       <div
         id="gym-custom-logo-container"
         style={style}
-        className={`flex items-center justify-center overflow-hidden flex-shrink-0 relative group rounded-full ${className}`}
+        className={`gym-logo-unbordered flex items-center justify-center overflow-hidden flex-shrink-0 relative group border-0 outline-none shadow-none ${
+          isCircle ? 'rounded-full' : ''
+        } ${className}`}
       >
         <img
           src={url}
           alt={gymName}
+          className="border-0 outline-none shadow-none"
           style={{
             objectFit: fit,
             width: '100%',
             height: '100%',
             borderRadius: isCircle ? '9999px' : `${borderRadius}px`,
+            border: '0px none transparent',
+            outline: 'none',
+            boxShadow: 'none',
             transform: `scale(${(logo?.zoom ?? 100) / 100})`,
             transition: 'transform 0.15s ease-out-in',
           }}
@@ -80,7 +85,7 @@ export const GymLogoDisplay: React.FC<GymLogoDisplayProps> = ({
         <div
           id="logo-fallback-elem"
           style={{ display: 'none' }}
-          className="w-full h-full flex items-center justify-center font-black text-white"
+          className="w-full h-full flex items-center justify-center font-black text-white border-0 outline-none"
         >
           {gymName.slice(0, 3).toUpperCase()}
         </div>
@@ -93,7 +98,7 @@ export const GymLogoDisplay: React.FC<GymLogoDisplayProps> = ({
     return (
       <div
         style={style}
-        className={`flex items-center justify-center overflow-hidden flex-shrink-0 shadow-inner bg-gradient-to-br from-amber-600 to-red-800 text-white font-black select-none ${className}`}
+        className={`gym-logo-unbordered flex items-center justify-center overflow-hidden flex-shrink-0 bg-gradient-to-br from-amber-600 to-red-800 text-white font-black select-none border-0 outline-none shadow-none ${className}`}
       >
         <Flame className="w-3/5 h-3/5" style={{ color: logo?.iconColor || '#fde047' }} />
       </div>
@@ -104,7 +109,7 @@ export const GymLogoDisplay: React.FC<GymLogoDisplayProps> = ({
     return (
       <div
         style={style}
-        className={`flex items-center justify-center overflow-hidden flex-shrink-0 shadow-inner bg-gradient-to-b from-stone-900 to-stone-950 text-white font-black select-none ${className}`}
+        className={`gym-logo-unbordered flex items-center justify-center overflow-hidden flex-shrink-0 bg-gradient-to-b from-stone-900 to-stone-950 text-white font-black select-none border-0 outline-none shadow-none ${className}`}
       >
         <span 
           className="text-[13px] tracking-wider font-extrabold"
@@ -119,7 +124,7 @@ export const GymLogoDisplay: React.FC<GymLogoDisplayProps> = ({
   if (preset === 'octagon') {
     return (
       <div
-        className={`flex items-center justify-center overflow-hidden flex-shrink-0 shadow-inner bg-stone-900 text-amber-400 font-black select-none ${className}`}
+        className={`gym-logo-unbordered flex items-center justify-center overflow-hidden flex-shrink-0 bg-stone-900 text-amber-400 font-black select-none border-0 outline-none shadow-none ${className}`}
         style={style}
       >
         <Shield className="w-3/5 h-3/5" style={{ color: logo?.iconColor || '#fbbf24' }} />
@@ -132,7 +137,7 @@ export const GymLogoDisplay: React.FC<GymLogoDisplayProps> = ({
     <div
       id="gym-emblem-logo-container"
       style={style}
-      className={`flex items-center justify-center overflow-hidden flex-shrink-0 shadow-inner bg-gradient-to-b from-red-700 to-red-950 text-white font-black select-none ${className}`}
+      className={`gym-logo-unbordered flex items-center justify-center overflow-hidden flex-shrink-0 bg-gradient-to-b from-red-700 to-red-950 text-white font-black select-none border-0 outline-none shadow-none ${className}`}
     >
       <div className="text-center leading-none">
         <span

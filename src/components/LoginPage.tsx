@@ -51,7 +51,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ settings, onLoginSuccess, 
     <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col justify-center items-center p-4 relative overflow-hidden select-none">
       {/* Background Decorative Gradients & Accents */}
       <div className="absolute top-1/4 -left-32 w-96 h-96 bg-red-900/15 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-amber-900/15 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-stone-800/20 rounded-full blur-3xl pointer-events-none" />
 
       {/* Main Login Card */}
       <div className="w-full max-w-md bg-stone-900/90 border border-stone-800/80 rounded-2xl shadow-2xl p-8 backdrop-blur-md relative z-10">
@@ -64,7 +64,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ settings, onLoginSuccess, 
           <h1 className="text-2xl font-bold font-raven tracking-wide text-white mb-1.5">
             {settings.gymName || 'ARTE SUAVE ACADEMY'}
           </h1>
-          <p className="text-xs text-amber-500 font-medium italic max-w-xs">
+          <p className="text-xs text-red-400 font-medium italic max-w-xs">
             "{settings.slogan || 'Where Technique Conquers Strength'}"
           </p>
         </div>
@@ -82,10 +82,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ settings, onLoginSuccess, 
 
         {/* Security Timeout Notification */}
         {securityMessage && (
-          <div className="mb-5 bg-amber-950/90 border border-amber-600/80 text-amber-200 text-xs rounded-xl p-3 flex items-start gap-2.5 shadow-md">
-            <ShieldCheck className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="mb-5 bg-stone-950 border border-stone-700 text-stone-200 text-xs rounded-xl p-3 flex items-start gap-2.5 shadow-md">
+            <ShieldCheck className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
             <div className="space-y-0.5">
-              <span className="font-bold text-amber-300 block">Security Session Timeout</span>
+              <span className="font-bold text-white block">Security Session Timeout</span>
               <span>{securityMessage}</span>
             </div>
           </div>
@@ -173,9 +173,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ settings, onLoginSuccess, 
           <button
             type="button"
             onClick={fillDemoAdmin}
-            className="text-xs bg-stone-950 border border-stone-800 hover:border-amber-600/60 text-stone-300 hover:text-amber-400 px-3 py-1.5 rounded-md flex items-center gap-2 transition-all"
+            className="text-xs bg-stone-950 border border-stone-800 hover:border-stone-700 text-stone-300 hover:text-white px-3 py-1.5 rounded-md flex items-center gap-2 transition-all"
           >
-            <KeyRound className="w-3.5 h-3.5 text-amber-500" />
+            <KeyRound className="w-3.5 h-3.5 text-red-500" />
             <span>Fill Admin Credentials (admin / admin123)</span>
           </button>
         </div>

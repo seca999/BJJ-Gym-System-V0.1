@@ -52,10 +52,10 @@ export const MouseTimeRangePicker: React.FC<MouseTimeRangePickerProps> = ({
       {label && (
         <div className="flex items-center justify-between">
           <label className="font-bold text-stone-200 flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <Clock className="w-3.5 h-3.5 text-red-400" />
             <span>{label}</span>
           </label>
-          <span className="text-[11px] font-bold text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded-full border border-amber-800/80">
+          <span className="text-[11px] font-bold text-stone-300 bg-stone-800 px-2 py-0.5 rounded-full border border-stone-700">
             Duration: {formatDurationDisplay(duration)}
           </span>
         </div>
@@ -71,7 +71,7 @@ export const MouseTimeRangePicker: React.FC<MouseTimeRangePickerProps> = ({
           <select
             value={start}
             onChange={(e) => handleStartChange(e.target.value)}
-            className="w-full bg-stone-900 border border-stone-700 hover:border-amber-400 focus:border-amber-400 rounded-lg px-2.5 py-2 text-white font-mono font-bold text-xs cursor-pointer focus:outline-none transition-colors"
+            className="w-full bg-stone-900 border border-stone-700 hover:border-red-500 focus:border-red-500 rounded-lg px-2.5 py-2 text-white font-mono font-bold text-xs cursor-pointer focus:outline-none transition-colors"
           >
             {TIME_OPTIONS.map((t) => (
               <option key={`start-${t}`} value={t}>

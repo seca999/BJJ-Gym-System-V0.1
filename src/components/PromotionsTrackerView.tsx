@@ -22,7 +22,8 @@ import {
   GraduationCap, 
   Download,
   Flame,
-  ArrowUpRight
+  ArrowUpRight,
+  Copy
 } from 'lucide-react';
 import { Member, Coach, BeltRank, StripeCount, PromotionRecord } from '../types';
 import { 
@@ -31,7 +32,8 @@ import {
   ADULT_BELT_RANKS, 
   ALL_BELT_RANKS,
   getBeltsForAgeGroup,
-  getNextBeltInHierarchy
+  getNextBeltInHierarchy,
+  BeltBadge
 } from '../utils/bjjBelts';
 
 interface PromotionsTrackerViewProps {
@@ -40,40 +42,41 @@ interface PromotionsTrackerViewProps {
   onUpdateMember: (updatedMember: Member) => void;
   onUpdateCoach: (updatedCoach: Coach) => void;
   defaultCoachName?: string;
+  theme?: 'light' | 'dark';
 }
 
 const BELT_COLORS: Record<BeltRank, { bg: string; text: string; border: string; barBg: string; sleeveBg: string }> = {
   // Adult Belts
   White: {
-    bg: 'bg-stone-100 text-stone-900',
+    bg: 'bg-stone-100 text-stone-900 font-bold',
     text: 'text-stone-900',
     border: 'border-stone-300',
     barBg: '#f5f5f4',
     sleeveBg: '#1c1917', // black bar
   },
   Blue: {
-    bg: 'bg-blue-600 text-white',
+    bg: 'bg-blue-600 text-white font-bold',
     text: 'text-blue-400',
     border: 'border-blue-500',
     barBg: '#2563eb',
     sleeveBg: '#1c1917',
   },
   Purple: {
-    bg: 'bg-purple-600 text-white',
+    bg: 'bg-purple-600 text-white font-bold',
     text: 'text-purple-400',
     border: 'border-purple-500',
     barBg: '#9333ea',
     sleeveBg: '#1c1917',
   },
   Brown: {
-    bg: 'bg-amber-900 text-amber-100',
+    bg: 'bg-amber-900 text-amber-100 font-bold',
     text: 'text-amber-600',
     border: 'border-amber-800',
     barBg: '#78350f',
     sleeveBg: '#1c1917',
   },
   Black: {
-    bg: 'bg-stone-950 text-red-400',
+    bg: 'bg-stone-950 text-red-400 font-black',
     text: 'text-red-500',
     border: 'border-red-600',
     barBg: '#09090b',
@@ -89,64 +92,64 @@ const BELT_COLORS: Record<BeltRank, { bg: string; text: string; border: string; 
     sleeveBg: '#1c1917',
   },
   Grey: {
-    bg: 'bg-stone-500 text-white',
+    bg: 'bg-stone-500 text-white font-bold',
     text: 'text-stone-200',
     border: 'border-stone-600',
     barBg: '#78716c',
     sleeveBg: '#1c1917',
   },
   'Grey-Black': {
-    bg: 'bg-stone-600 text-white',
+    bg: 'bg-stone-600 text-white font-bold',
     text: 'text-stone-200',
     border: 'border-stone-700',
     barBg: '#57534e',
     sleeveBg: '#1c1917',
   },
 
-  // IBJJF Youth Yellow Belts (Ages 7-15)
+  // IBJJF Youth Yellow Belts (Ages 7-15) - Pure Solid Yellow with Dark High-Contrast Typography
   'Yellow-White': {
-    bg: 'bg-amber-300 text-amber-950 font-bold',
-    text: 'text-amber-900',
-    border: 'border-amber-400',
-    barBg: '#fcd34d',
-    sleeveBg: '#1c1917',
+    bg: 'bg-yellow-400 text-yellow-950 font-black',
+    text: 'text-yellow-950 font-black',
+    border: 'border-yellow-600',
+    barBg: '#facc15',
+    sleeveBg: '#121212',
   },
   Yellow: {
-    bg: 'bg-amber-400 text-amber-950 font-bold',
-    text: 'text-amber-900',
-    border: 'border-amber-500',
-    barBg: '#fbbf24',
-    sleeveBg: '#1c1917',
+    bg: 'bg-yellow-400 text-yellow-950 font-black',
+    text: 'text-yellow-950 font-black',
+    border: 'border-yellow-600',
+    barBg: '#facc15',
+    sleeveBg: '#121212',
   },
   'Yellow-Black': {
-    bg: 'bg-amber-500 text-white font-bold',
-    text: 'text-amber-950',
-    border: 'border-amber-600',
-    barBg: '#f59e0b',
-    sleeveBg: '#1c1917',
+    bg: 'bg-yellow-400 text-yellow-950 font-black',
+    text: 'text-yellow-950 font-black',
+    border: 'border-yellow-600',
+    barBg: '#facc15',
+    sleeveBg: '#121212',
   },
 
-  // IBJJF Youth Orange Belts (Ages 10-15)
+  // IBJJF Youth Orange Belts (Ages 10-15) - Deep Rich Tangerine/Fire Orange
   'Orange-White': {
-    bg: 'bg-orange-400 text-orange-950 font-bold',
-    text: 'text-orange-900',
-    border: 'border-orange-500',
-    barBg: '#fb923c',
-    sleeveBg: '#1c1917',
+    bg: 'bg-orange-600 text-white font-bold',
+    text: 'belt-text-white',
+    border: 'border-orange-700',
+    barBg: '#ea580c',
+    sleeveBg: '#121212',
   },
   Orange: {
-    bg: 'bg-orange-500 text-white font-bold',
-    text: 'text-orange-100',
-    border: 'border-orange-600',
-    barBg: '#f97316',
-    sleeveBg: '#1c1917',
+    bg: 'bg-orange-600 text-white font-bold',
+    text: 'belt-text-white',
+    border: 'border-orange-700',
+    barBg: '#ea580c',
+    sleeveBg: '#121212',
   },
   'Orange-Black': {
     bg: 'bg-orange-600 text-white font-bold',
-    text: 'text-orange-100',
+    text: 'belt-text-white',
     border: 'border-orange-700',
     barBg: '#ea580c',
-    sleeveBg: '#1c1917',
+    sleeveBg: '#121212',
   },
 
   // IBJJF Youth Green Belts (Ages 13-15)
@@ -175,54 +178,13 @@ const BELT_COLORS: Record<BeltRank, { bg: string; text: string; border: string; 
 
 const BELT_ORDER: BeltRank[] = ['White', 'Blue', 'Purple', 'Brown', 'Black'];
 
-// Visual BJJ Belt Bar with Stripes
+// Visual BJJ Belt Bar with Stripes - Strictly Uniform Identical Dimensions
 export const BeltDisplay: React.FC<{ belt: BeltRank; stripes: StripeCount; size?: 'sm' | 'md' | 'lg' }> = ({
   belt,
   stripes,
   size = 'md',
 }) => {
-  const config = BELT_COLORS[belt] || BELT_COLORS.White;
-  const isBlack = belt === 'Black';
-
-  const heightClass = size === 'sm' ? 'h-5 text-[10px]' : size === 'lg' ? 'h-8 text-sm' : 'h-6 text-xs';
-  const sleeveWidth = size === 'sm' ? 'w-8' : size === 'lg' ? 'w-14' : 'w-11';
-  const stripeWidth = size === 'sm' ? 'w-1' : size === 'lg' ? 'w-2' : 'w-1.5';
-
-  return (
-    <div
-      className={`relative inline-flex items-center rounded-sm overflow-hidden shadow-xs border ${config.border} ${heightClass} min-w-[110px] max-w-[150px] select-none`}
-      style={{ backgroundColor: config.barBg }}
-      title={`${belt} Belt with ${stripes} Stripe${stripes === 1 ? '' : 's'}`}
-    >
-      {/* Belt rank text */}
-      <span
-        className={`px-2 font-black uppercase tracking-wider flex-1 truncate ${
-          belt === 'White' ? 'text-stone-900' : 'text-white'
-        }`}
-      >
-        {belt}
-      </span>
-
-      {/* Rank Sleeve (Black bar or Red bar for Black Belt) */}
-      <div
-        className={`${sleeveWidth} h-full flex items-center justify-around px-1 relative`}
-        style={{ backgroundColor: config.sleeveBg }}
-      >
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div
-            key={i}
-            className={`${stripeWidth} h-4/5 rounded-xs transition-all ${
-              i < stripes
-                ? 'bg-white shadow-xs'
-                : isBlack
-                ? 'bg-red-950/40'
-                : 'bg-stone-900/40'
-            }`}
-          />
-        ))}
-      </div>
-    </div>
-  );
+  return <BeltBadge belt={belt} stripes={stripes} size={size} showLabel={false} />;
 };
 
 export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
@@ -231,13 +193,25 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
   onUpdateMember,
   onUpdateCoach,
   defaultCoachName = 'Professor Lucas Silva',
+  theme = 'dark',
 }) => {
+  const isLight = theme === 'light';
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'students' | 'coaches'>('all');
   const [divisionFilter, setDivisionFilter] = useState<'all' | 'Kids' | 'Teens' | 'Adults'>('all');
   const [beltFilter, setBeltFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'due' | 'next30' | 'next90'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [copiedPractitionerId, setCopiedPractitionerId] = useState<string | null>(null);
+
+  const handleCopyName = (e: React.MouseEvent, fullName: string, targetId: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(fullName);
+    setCopiedPractitionerId(targetId);
+    setTimeout(() => {
+      setCopiedPractitionerId((prev) => (prev === targetId ? null : prev));
+    }, 1800);
+  };
 
   // Modal states
   const [selectedPromoteTarget, setSelectedPromoteTarget] = useState<{
@@ -670,22 +644,34 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-stone-900 via-stone-850 to-stone-900 border border-stone-800 rounded-xl p-5 sm:p-6 text-white shadow-lg">
+      <div className={`${
+        isLight 
+          ? 'bg-white border border-stone-200 text-stone-900 shadow-sm' 
+          : 'bg-gradient-to-r from-stone-900 via-stone-850 to-stone-900 border border-stone-800 text-white shadow-lg'
+      } rounded-xl p-5 sm:p-6 transition-colors`}>
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-start gap-4">
-            <div className="p-3 bg-red-950/80 border border-red-700/60 rounded-xl text-red-400 shadow-md flex-shrink-0">
-              <Award className="w-8 h-8 text-amber-400" />
+            <div className={`p-3 rounded-xl shadow-md shrink-0 border ${
+              isLight 
+                ? 'bg-amber-100 border-amber-300 text-amber-950' 
+                : 'bg-red-950/80 border-red-700/60 text-red-400'
+            }`}>
+              <Award className={`w-8 h-8 ${isLight ? 'text-amber-800' : 'text-amber-400'}`} />
             </div>
             <div>
               <div className="flex items-center gap-2.5 flex-wrap">
-                <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
+                <h2 className={`text-xl sm:text-2xl font-black tracking-tight ${isLight ? 'text-stone-950' : 'text-white'}`}>
                   Promotions & Belt Progression Directory
                 </h2>
-                <span className="px-2 py-0.5 text-xs font-bold bg-amber-950 text-amber-300 rounded border border-amber-800">
+                <span className={`px-2 py-0.5 text-xs font-black rounded border ${
+                  isLight 
+                    ? 'bg-amber-100 text-amber-950 border-amber-400' 
+                    : 'bg-amber-950 text-amber-300 border-amber-800'
+                }`}>
                   {metrics.total} Practitioners
                 </span>
               </div>
-              <p className="text-stone-300 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
+              <p className={`text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed ${isLight ? 'text-stone-600 font-medium' : 'text-stone-300'}`}>
                 Track graduation dates, belt & stripe milestones, mat hours, and upcoming evaluation eligibility for every student and coach in your academy.
               </p>
             </div>
@@ -694,83 +680,113 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
           <div className="flex items-center gap-2.5 flex-wrap self-start lg:self-center">
             <button
               onClick={handleExportCSV}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs sm:text-sm font-semibold transition-colors shadow-xs"
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-colors shadow-xs border ${
+                isLight
+                  ? 'bg-stone-100 hover:bg-stone-200 text-stone-800 border-stone-300'
+                  : 'bg-stone-800 hover:bg-stone-700 text-stone-200 border-stone-700'
+              }`}
               title="Download promotions ledger as CSV spreadsheet"
             >
-              <Download className="w-4 h-4 text-stone-400" />
+              <Download className={`w-4 h-4 ${isLight ? 'text-stone-600' : 'text-stone-400'}`} />
               <span>Export CSV</span>
             </button>
           </div>
         </div>
 
         {/* Metric Cards Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-stone-800/80">
+        <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t ${
+          isLight ? 'border-stone-200' : 'border-stone-800/80'
+        }`}>
+          {/* Card 1: All Ranks */}
           <div 
             onClick={() => { setStatusFilter('all'); setRoleFilter('all'); }}
-            className="bg-stone-800/60 hover:bg-stone-800 border border-stone-700/60 rounded-lg p-3.5 cursor-pointer transition-all hover:border-stone-500"
+            className={`rounded-lg p-3.5 cursor-pointer transition-all border ${
+              isLight
+                ? statusFilter === 'all' && roleFilter === 'all'
+                  ? 'bg-stone-100 border-stone-400 ring-2 ring-stone-400 text-stone-900 shadow-sm'
+                  : 'bg-stone-50 hover:bg-stone-100 border-stone-200 text-stone-900'
+                : 'bg-stone-800/60 hover:bg-stone-800 border-stone-700/60 hover:border-stone-500'
+            }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs text-stone-400 font-medium">All Ranks</span>
-              <Users className="w-4 h-4 text-stone-400" />
+              <span className={`text-xs font-bold ${isLight ? 'text-stone-700' : 'text-stone-400'}`}>All Ranks</span>
+              <Users className={`w-4 h-4 ${isLight ? 'text-stone-600' : 'text-stone-400'}`} />
             </div>
-            <div className="text-2xl font-black text-white mt-1">{metrics.total}</div>
-            <div className="text-[11px] text-stone-400 mt-0.5">
+            <div className={`text-2xl font-black mt-1 ${isLight ? 'text-stone-950' : 'text-white'}`}>{metrics.total}</div>
+            <div className={`text-[11px] mt-0.5 ${isLight ? 'text-stone-600 font-semibold' : 'text-stone-400'}`}>
               {metrics.studentsCount} Students • {metrics.coachesCount} Coaches
             </div>
           </div>
 
+          {/* Card 2: Due for Promotion */}
           <div 
             onClick={() => setStatusFilter('due')}
             className={`rounded-lg p-3.5 cursor-pointer transition-all border ${
-              statusFilter === 'due'
-                ? 'bg-amber-950/70 border-amber-500 ring-1 ring-amber-500'
-                : 'bg-stone-800/60 hover:bg-stone-800 border-amber-900/50 hover:border-amber-600'
+              isLight
+                ? statusFilter === 'due'
+                  ? 'bg-amber-100 border-amber-600 ring-2 ring-amber-600 shadow-sm'
+                  : 'bg-amber-50/90 hover:bg-amber-100/80 border-amber-300'
+                : statusFilter === 'due'
+                  ? 'bg-amber-950/70 border-amber-500 ring-1 ring-amber-500'
+                  : 'bg-stone-800/60 hover:bg-stone-800 border-amber-900/50 hover:border-amber-600'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs text-amber-300 font-bold flex items-center gap-1">
-                <Flame className="w-3.5 h-3.5 text-amber-400" /> Due for Promotion
+              <span className={`text-xs font-black flex items-center gap-1 ${
+                isLight ? 'text-amber-950' : 'text-amber-300'
+              }`}>
+                <Flame className={`w-3.5 h-3.5 ${isLight ? 'text-amber-800' : 'text-amber-400'}`} /> Due for Promotion
               </span>
-              <AlertCircle className="w-4 h-4 text-amber-400" />
+              <AlertCircle className={`w-4 h-4 ${isLight ? 'text-amber-800' : 'text-amber-400'}`} />
             </div>
-            <div className="text-2xl font-black text-amber-400 mt-1">{metrics.dueCount}</div>
-            <div className="text-[11px] text-amber-300/80 mt-0.5">
+            <div className={`text-2xl font-black mt-1 ${isLight ? 'text-amber-950' : 'text-amber-400'}`}>{metrics.dueCount}</div>
+            <div className={`text-[11px] mt-0.5 ${isLight ? 'text-amber-950 font-bold' : 'text-amber-300/80'}`}>
               Target date reached or past due
             </div>
           </div>
 
+          {/* Card 3: Upcoming (30 Days) */}
           <div 
             onClick={() => setStatusFilter('next30')}
             className={`rounded-lg p-3.5 cursor-pointer transition-all border ${
-              statusFilter === 'next30'
-                ? 'bg-emerald-950/70 border-emerald-500 ring-1 ring-emerald-500'
-                : 'bg-stone-800/60 hover:bg-stone-800 border-emerald-900/50 hover:border-emerald-600'
+              isLight
+                ? statusFilter === 'next30'
+                  ? 'bg-emerald-100 border-emerald-600 ring-2 ring-emerald-600 shadow-sm'
+                  : 'bg-emerald-50/90 hover:bg-emerald-100/80 border-emerald-300'
+                : statusFilter === 'next30'
+                  ? 'bg-emerald-950/70 border-emerald-500 ring-1 ring-emerald-500'
+                  : 'bg-stone-800/60 hover:bg-stone-800 border-emerald-900/50 hover:border-emerald-600'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs text-emerald-300 font-bold">Upcoming (30 Days)</span>
-              <Calendar className="w-4 h-4 text-emerald-400" />
+              <span className={`text-xs font-black ${isLight ? 'text-emerald-950' : 'text-emerald-300'}`}>Upcoming (30 Days)</span>
+              <Calendar className={`w-4 h-4 ${isLight ? 'text-emerald-800' : 'text-emerald-400'}`} />
             </div>
-            <div className="text-2xl font-black text-emerald-400 mt-1">{metrics.upcoming30Count}</div>
-            <div className="text-[11px] text-emerald-300/80 mt-0.5">
+            <div className={`text-2xl font-black mt-1 ${isLight ? 'text-emerald-950' : 'text-emerald-400'}`}>{metrics.upcoming30Count}</div>
+            <div className={`text-[11px] mt-0.5 ${isLight ? 'text-emerald-950 font-bold' : 'text-emerald-300/80'}`}>
               Eligible in next 4 weeks
             </div>
           </div>
 
+          {/* Card 4: Black Belts */}
           <div 
             onClick={() => { setBeltFilter('Black'); setStatusFilter('all'); }}
             className={`rounded-lg p-3.5 cursor-pointer transition-all border ${
-              beltFilter === 'Black'
-                ? 'bg-red-950/70 border-red-500 ring-1 ring-red-500'
-                : 'bg-stone-800/60 hover:bg-stone-800 border-stone-700/60 hover:border-red-600'
+              isLight
+                ? beltFilter === 'Black'
+                  ? 'bg-red-100 border-red-600 ring-2 ring-red-600 shadow-sm'
+                  : 'bg-red-50/90 hover:bg-red-100/80 border-red-300'
+                : beltFilter === 'Black'
+                  ? 'bg-red-950/70 border-red-500 ring-1 ring-red-500'
+                  : 'bg-stone-800/60 hover:bg-stone-800 border-stone-700/60 hover:border-red-600'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs text-red-300 font-medium">Black Belts</span>
-              <Shield className="w-4 h-4 text-red-400" />
+              <span className={`text-xs font-bold ${isLight ? 'text-red-950' : 'text-red-300'}`}>Black Belts</span>
+              <Shield className={`w-4 h-4 ${isLight ? 'text-red-800' : 'text-red-400'}`} />
             </div>
-            <div className="text-2xl font-black text-red-400 mt-1">{metrics.blackBeltsCount}</div>
-            <div className="text-[11px] text-stone-400 mt-0.5">
+            <div className={`text-2xl font-black mt-1 ${isLight ? 'text-red-950' : 'text-red-400'}`}>{metrics.blackBeltsCount}</div>
+            <div className={`text-[11px] mt-0.5 ${isLight ? 'text-stone-700 font-semibold' : 'text-stone-400'}`}>
               Professors & Black Belts
             </div>
           </div>
@@ -968,7 +984,7 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
               >
                 {/* Due badge banner if ready for promotion */}
                 {p.isDue && (
-                  <div className="absolute -top-2.5 right-4 bg-amber-500 text-stone-950 font-black text-[10px] uppercase tracking-wider px-2.5 py-0.5 rounded-full shadow-md flex items-center gap-1 border border-amber-300">
+                  <div className="absolute -top-2.5 right-4 bg-amber-400 text-stone-950 font-black text-[10px] uppercase tracking-wider px-2.5 py-0.5 rounded-full shadow-md flex items-center gap-1 border border-amber-600">
                     <Flame className="w-3 h-3 text-stone-950" />
                     Due for Promotion
                   </div>
@@ -987,7 +1003,11 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-stone-700 to-stone-900 text-amber-400 font-black text-xl flex items-center justify-center border-2 border-stone-600 shadow-xs">
+                        <div className={`w-14 h-14 rounded-full font-black text-xl flex items-center justify-center border-2 shadow-xs ${
+                          isLight
+                            ? 'bg-stone-200 text-stone-900 border-stone-300'
+                            : 'bg-gradient-to-br from-stone-700 to-stone-900 text-amber-400 border-stone-600'
+                        }`}>
                           {p.name.charAt(0)}
                         </div>
                       )}
@@ -996,7 +1016,7 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
                         className="absolute inset-0 bg-stone-950/70 text-white rounded-full flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity"
                         title="Upload / Change Profile Picture"
                       >
-                        <Camera className="w-4 h-4 text-amber-400" />
+                        <Camera className={`w-4 h-4 ${isLight ? 'text-stone-200' : 'text-amber-400'}`} />
                       </button>
                     </div>
 
@@ -1006,10 +1026,35 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
                         <h4 className="font-bold text-stone-900 dark:text-white text-base truncate">
                           {p.name}
                         </h4>
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyName(e, p.name, `${p.type}-${p.id}`)}
+                          title={copiedPractitionerId === `${p.type}-${p.id}` ? 'Copied name to clipboard!' : `Copy "${p.name}"`}
+                          className={`p-1 rounded-md transition-all inline-flex items-center gap-1 text-[11px] cursor-pointer active:scale-95 ${
+                            copiedPractitionerId === `${p.type}-${p.id}`
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                              : isLight
+                              ? 'text-stone-500 hover:text-stone-900 hover:bg-stone-200 border border-transparent'
+                              : 'text-stone-400 hover:text-white hover:bg-stone-800 border border-transparent'
+                          }`}
+                        >
+                          {copiedPractitionerId === `${p.type}-${p.id}` ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              <span className="font-mono text-[10px] font-bold">Copied</span>
+                            </>
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
                             isCoach
-                              ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                              ? isLight
+                                ? 'bg-amber-100 text-amber-950 border border-amber-400 font-black'
+                                : 'bg-amber-950/80 text-amber-300 border border-amber-800'
                               : 'bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
                           }`}
                         >
@@ -1040,7 +1085,7 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
                     {/* Next Expected Promotion */}
                     <div className="flex items-center justify-between text-xs pt-2 border-t border-stone-200 dark:border-stone-800">
                       <span className="text-stone-500 dark:text-stone-400 font-medium flex items-center gap-1.5">
-                        <GraduationCap className="w-3.5 h-3.5 text-amber-500" />
+                        <GraduationCap className={`w-3.5 h-3.5 ${isLight ? 'text-amber-800' : 'text-amber-500'}`} />
                         Next Expected:
                       </span>
                       <div className="text-right">
@@ -1049,12 +1094,12 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
                         </span>
                         {p.daysUntilNext !== null && (
                           <span
-                            className={`text-[10px] font-bold ${
+                            className={`text-[10px] font-black ${
                               p.isDue
-                                ? 'text-amber-600 dark:text-amber-400'
+                                ? isLight ? 'text-amber-950' : 'text-amber-400'
                                 : p.isUpcoming30
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-stone-500 dark:text-stone-400'
+                                ? isLight ? 'text-emerald-950' : 'text-emerald-400'
+                                : isLight ? 'text-stone-600' : 'text-stone-400'
                             }`}
                           >
                             {p.daysUntilNext <= 0
@@ -1176,14 +1221,39 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
-                              <div className="w-9 h-9 rounded-full bg-stone-800 text-amber-400 font-bold text-xs flex items-center justify-center border border-stone-700">
+                              <div className={`w-9 h-9 rounded-full font-bold text-xs flex items-center justify-center border ${
+                                isLight
+                                  ? 'bg-stone-200 text-stone-900 border-stone-300'
+                                  : 'bg-stone-800 text-amber-400 border-stone-700'
+                              }`}>
                                 {p.name.charAt(0)}
                               </div>
                             )}
                           </div>
                           <div>
-                            <div className="font-bold text-stone-900 dark:text-white">
-                              {p.name}
+                            <div className="font-bold text-stone-900 dark:text-white flex items-center gap-1.5 flex-wrap">
+                              <span>{p.name}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopyName(e, p.name, `tbl-${p.type}-${p.id}`)}
+                                title={copiedPractitionerId === `tbl-${p.type}-${p.id}` ? 'Copied name to clipboard!' : `Copy "${p.name}"`}
+                                className={`p-1 rounded-md transition-all inline-flex items-center gap-1 text-[11px] cursor-pointer active:scale-95 ${
+                                  copiedPractitionerId === `tbl-${p.type}-${p.id}`
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                                    : isLight
+                                    ? 'text-stone-500 hover:text-stone-900 hover:bg-stone-200 border border-transparent'
+                                    : 'text-stone-400 hover:text-white hover:bg-stone-800 border border-transparent'
+                                }`}
+                              >
+                                {copiedPractitionerId === `tbl-${p.type}-${p.id}` ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span className="font-mono text-[10px] font-bold">Copied</span>
+                                  </>
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
                             </div>
                             <div className="text-xs text-stone-500 dark:text-stone-400">
                               {p.phone}
@@ -1197,7 +1267,9 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
                         <span
                           className={`text-[11px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
                             isCoach
-                              ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300'
+                              ? isLight
+                                ? 'bg-amber-100 text-amber-950 border border-amber-400 font-black'
+                                : 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300'
                               : 'bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300'
                           }`}
                         >
@@ -1222,12 +1294,12 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
                         </div>
                         {p.daysUntilNext !== null && (
                           <div
-                            className={`text-[10px] font-semibold ${
+                            className={`text-[10px] font-black ${
                               p.isDue
-                                ? 'text-amber-600 dark:text-amber-400'
+                                ? isLight ? 'text-amber-950' : 'text-amber-400'
                                 : p.isUpcoming30
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-stone-400'
+                                ? isLight ? 'text-emerald-950' : 'text-emerald-400'
+                                : isLight ? 'text-stone-600' : 'text-stone-400'
                             }`}
                           >
                             {p.daysUntilNext <= 0
@@ -1245,13 +1317,21 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
                       {/* Status */}
                       <td className="py-3 px-4">
                         {p.isDue ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                            <Flame className="w-3 h-3 text-amber-500" />
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                            isLight
+                              ? 'bg-amber-100 text-amber-950 border-amber-400 shadow-xs'
+                              : 'bg-amber-950 text-amber-300 border-amber-800'
+                          }`}>
+                            <Flame className={`w-3 h-3 ${isLight ? 'text-amber-800' : 'text-amber-500'}`} />
                             Due Now
                           </span>
                         ) : p.isUpcoming30 ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                            <Clock className="w-3 h-3 text-emerald-500" />
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                            isLight
+                              ? 'bg-emerald-100 text-emerald-950 border-emerald-400 shadow-xs'
+                              : 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                          }`}>
+                            <Clock className={`w-3 h-3 ${isLight ? 'text-emerald-800' : 'text-emerald-500'}`} />
                             Next 30d
                           </span>
                         ) : (
@@ -1311,8 +1391,12 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
           <div className="bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-stone-200 dark:border-stone-800">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-red-950 text-red-400 rounded-xl border border-red-800">
-                  <Award className="w-6 h-6 text-amber-400" />
+                <div className={`p-2.5 rounded-xl border ${
+                  isLight
+                    ? 'bg-amber-100 text-amber-950 border-amber-300'
+                    : 'bg-red-950 text-red-400 border-red-800'
+                }`}>
+                  <Award className={`w-6 h-6 ${isLight ? 'text-amber-800' : 'text-amber-400'}`} />
                 </div>
                 <div>
                   <h3 className="text-lg font-black text-stone-900 dark:text-white">
@@ -1345,8 +1429,8 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
               </div>
 
               <div className="flex flex-col items-center px-2">
-                <ChevronRight className="w-6 h-6 text-amber-500" />
-                <span className="text-[10px] font-bold text-amber-500 uppercase">Graduating</span>
+                <ChevronRight className={`w-6 h-6 ${isLight ? 'text-amber-800' : 'text-amber-500'}`} />
+                <span className={`text-[10px] font-black uppercase ${isLight ? 'text-amber-950' : 'text-amber-400'}`}>Graduating</span>
               </div>
 
               <div>
@@ -1559,7 +1643,9 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
           <div className="bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-stone-200 dark:border-stone-800">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-amber-950 text-amber-400 rounded-lg border border-amber-800">
+                <div className={`p-2 rounded-lg border ${
+                  isLight ? 'bg-amber-100 text-amber-950 border-amber-300' : 'bg-amber-950 text-amber-400 border-amber-800'
+                }`}>
                   <History className="w-5 h-5" />
                 </div>
                 <div>
@@ -1611,7 +1697,7 @@ export const PromotionsTrackerView: React.FC<PromotionsTrackerViewProps> = ({
                 ))
               ) : (
                 <div className="text-center py-8 text-stone-400">
-                  <Award className="w-10 h-10 mx-auto mb-2 opacity-50 text-amber-500" />
+                  <Award className={`w-10 h-10 mx-auto mb-2 opacity-60 ${isLight ? 'text-amber-800' : 'text-amber-500'}`} />
                   <p className="text-sm font-semibold text-stone-600 dark:text-stone-300">
                     No historical promotions logged yet
                   </p>

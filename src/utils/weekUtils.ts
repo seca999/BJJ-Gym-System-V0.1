@@ -3,6 +3,8 @@
  * Gym week runs Saturday through Friday (7 days).
  */
 
+import { getJordanDateStr } from './timeUtils';
+
 export interface GymDayInfo {
   dayFull: string; // 'Saturday', 'Sunday', etc.
   dayShort: string; // 'Sat', 'Sun', etc.
@@ -86,10 +88,10 @@ export function getSaturdayOfWeek(d: Date): Date {
 }
 
 /**
- * Returns today's ISO date string
+ * Returns today's ISO date string in Jordan Amman timezone
  */
 export function getTodayDateStr(): string {
-  return formatDateToISO(new Date());
+  return getJordanDateStr();
 }
 
 /**

@@ -46,7 +46,7 @@ export type MembershipType = 'class_pack' | 'monthly_unlimited' | 'single_dropin
 
 export type MemberStatus = 'active' | 'warning' | 'expired' | 'frozen';
 
-export type PaymentMethod = 'Credit Card' | 'Cash' | 'Cliq';
+export type PaymentMethod = 'Credit Card' | 'Cash' | 'Cliq' | 'Bank Transfer';
 
 export interface EmergencyContact {
   name: string;
@@ -125,6 +125,27 @@ export interface AttendanceRecord {
   dayOfWeek?: string;
 }
 
+export type ReminderTriggerType = 'one_class_left' | 'subscription_finished';
+
+export interface RenewalReminderLog {
+  id: string;
+  memberId: string;
+  memberName: string;
+  phone: string;
+  recipientName: string;
+  recipientPhone: string;
+  isYouth: boolean;
+  ageGroup?: string;
+  beltRank: string;
+  classesRemaining: number;
+  triggerType: ReminderTriggerType;
+  messageText: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:mm
+  sentVia: 'automated_background' | 'whatsapp' | 'sms';
+  status: 'Sent' | 'Logged';
+}
+
 export interface PaymentRecord {
   id: string;
   memberId: string;
@@ -156,7 +177,7 @@ export interface ClassSession {
   title: string;
   category: ClassCategory;
   time: string;
-  type: 'Gi' | 'No-Gi' | 'Open Mat' | 'Kids' | 'Fundamentals' | 'Wrestling' | 'Morning' | string;
+  type: 'Gi' | 'No-Gi' | 'Open Mat' | 'Kids' | 'Fundamentals' | 'Wrestling' | 'Morning' | 'VIP' | string;
   coach: string; // Head coach display name
   headCoachId?: string;
   headCoachName?: string;
@@ -175,6 +196,7 @@ export interface ClassSession {
   description?: string;
   eligibleAgeMin?: number;
   eligibleAgeMax?: number;
+  isVip?: boolean;
 }
 
 export interface GymLogoSettings {
@@ -218,10 +240,23 @@ export interface GymSettings {
   taxRate?: number;
   logo?: GymLogoSettings;
   headerBanner?: HeaderBannerSettings;
+  headerBgColor?: string; // Solid background color for top header (hex color code e.g. #0c0a09)
+  headerBgType?: 'solid' | 'photo' | 'both'; // Mode for header background fill
+  appBgColor?: string; // Solid background color for application body / pages (hex color e.g. #0c0a09, #18181b, #0f172a, #ffffff)
   gymNameColor?: string; // Color for gym name text
   gymNameFontSize?: number; // Font size in px for school name (e.g. 18 to 72)
+  gymNameFontFamily?: string; // e.g. 'Cinzel', 'Plus Jakarta Sans', 'Oswald', 'Bebas Neue', 'Montserrat', 'Permanent Marker', 'custom'
+  gymNameFontWeight?: string; // '600' | '700' | '800' | '900'
+  gymNameLetterSpacing?: number; // 0 to 12 px
+  gymNameTextTransform?: 'uppercase' | 'capitalize' | 'none';
+  gymNameShadow?: boolean;
+  customFontUrl?: string; // Base64 Data URL for uploaded font (.ttf, .otf, .woff, .woff2)
+  customFontName?: string; // Dynamic FontFace family name e.g. 'AcademyCustomFont'
+  customFontFileName?: string; // Original filename of uploaded font e.g. 'Oswald-Bold.ttf'
   sloganColor?: string; // Color for slogan text
   sloganFontSize?: number; // Font size in px for slogan (e.g. 12 to 28)
+  sloganFontFamily?: string; // Custom font family for slogan text
+  customSloganFontUrl?: string; // Uploaded custom font for slogan
   brandingAlignment?: 'left' | 'center' | 'right'; // move text left, right or center
   brandingVerticalOffset?: number; // move text up or down (in pixels)
   brandingHorizontalOffset?: number; // move text left or right relative to container (in pixels)
@@ -230,6 +265,19 @@ export interface GymSettings {
   logoHorizontalOffset?: number; // move logo left or right relative to container (in pixels)
 }
 
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  date: string;
+  time: string;
+  userName: string;
+  userRole?: string;
+  action: string;
+  category: 'CHECK_IN' | 'MEMBER' | 'PAYMENT' | 'CLASS' | 'SYSTEM' | 'SECURITY';
+  details: string;
+  ipAddress?: string;
+}
 
 export type CoachPayType = 'per_class' | 'hourly' | 'monthly_fixed' | 'per_student';
 
@@ -310,6 +358,9 @@ export interface TimetableCell {
   category?: ClassCategory;
   customBgColor?: string; // optional override
   customTextColor?: string;
+  timeRange?: string; // custom/stretched time range, e.g. '7:00 AM - 9:30 AM'
+  spanSlots?: number; // number of slots spanned by this class when stretched
+  isSpanContinuation?: boolean; // true if this slot is covered by a stretched class above it
 }
 
 export interface TimetableConfig {
@@ -330,12 +381,16 @@ export interface TimetableConfig {
 // --- SUBSCRIPTION & PRICING PLANS ---
 export interface SubscriptionPlan {
   id: string;
-  name: string; // e.g., 'Kids 8 Classes / Month', 'Adults Unlimited'
-  category: ClassCategory; // 'Kids' | 'Teens' | 'Adults' | 'All Levels'
-  classesCount: number; // 8, 12, or -1 for Unlimited
-  price: number; // e.g., 65, 85, 110, 145
+  name: string; // e.g., 'Kids 8 Classes / Month', 'Adults Unlimited', 'VIP Private 1-on-1'
+  category: ClassCategory | 'VIP'; // 'Kids' | 'Teens' | 'Adults' | 'All Levels' | 'VIP'
+  isVip?: boolean;
+  vipCoachName?: string;
+  vipDurationMinutes?: number;
+  vipLocation?: string;
+  classesCount: number; // 8, 12, or -1 for Unlimited, or private session count
+  price: number; // e.g., 65, 85, 110, 145, 180
   currency?: string;
-  billingPeriod: 'monthly' | 'quarterly' | 'annual' | 'punch_card';
+  billingPeriod: 'monthly' | 'quarterly' | 'annual' | 'punch_card' | 'private_session';
   durationDays: number; // e.g., 30, 90, 365
   description?: string;
   features?: string[];
@@ -401,4 +456,49 @@ export interface SystemUser {
   createdAt: string;
   lastLogin?: string;
 }
+
+// --- PRO SHOP & FIGHTING GEAR MERCHANDISE ---
+export type MerchCategory = 'gis' | 'rashguards' | 'gear' | 'belts' | 'apparel' | 'accessories';
+
+export interface MerchSizeOption {
+  size: string;
+  stock: number;
+}
+
+export interface MerchItem {
+  id: string;
+  name: string;
+  category: MerchCategory;
+  price: number; // selling price
+  costPrice?: number; // wholesale cost
+  stock: number; // total stock across sizes
+  sizes: MerchSizeOption[];
+  description?: string;
+  imageUrl?: string; // Main / Display Picture
+  images?: string[]; // Multiple pictures gallery
+  sku?: string;
+  brand?: string;
+  isPopular?: boolean;
+}
+
+export interface MerchSaleRecord {
+  id: string;
+  itemId: string;
+  itemName: string;
+  category: MerchCategory;
+  size: string;
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+  buyerType: 'member' | 'walkin';
+  memberId?: string;
+  buyerName: string;
+  buyerPhone?: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM
+  paymentMethod: PaymentMethod;
+  paymentId: string; // links to PaymentRecord
+  notes?: string;
+}
+
 

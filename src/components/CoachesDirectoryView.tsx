@@ -20,10 +20,15 @@ import {
   Check,
   Printer,
   X,
+  CreditCard,
+  AlertCircle,
+  TrendingUp,
+  Receipt
 } from 'lucide-react';
 import { Coach, AttendanceRecord, ClassSession, CoachPayType, BeltRank, StripeCount, CoachSalarySummary, CoachSessionItem } from '../types';
 import { BeltBadge } from '../utils/bjjBelts';
 import { formatCurrency } from '../utils/currencyUtils';
+import { loadCoachPaidMap, saveCoachPaidMap } from '../utils/storage';
 
 interface CoachesDirectoryViewProps {
   coaches: Coach[];
@@ -32,6 +37,7 @@ interface CoachesDirectoryViewProps {
   onAddCoach: (newCoach: Coach) => void;
   onUpdateCoach: (updatedCoach: Coach) => void;
   onDeleteCoach: (coachId: string) => void;
+  theme?: 'light' | 'dark';
 }
 
 export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
@@ -41,14 +47,15 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
   onAddCoach,
   onUpdateCoach,
   onDeleteCoach,
+  theme = 'dark',
 }) => {
   // Period filter
   const [periodPreset, setPeriodPreset] = useState<'this_month' | 'last_month' | 'last_30_days' | 'custom'>('this_month');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
-  // Active view: Directory Cards vs Payroll Salary Table vs Sessions Log
-  const [viewMode, setViewMode] = useState<'DIRECTORY' | 'PAYROLL_TABLE' | 'SESSIONS_FEED'>('DIRECTORY');
+  // Status Filter: ALL vs NEEDED_END_OF_MONTH (Pending) vs PAID
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'PAID'>('ALL');
 
   // Search query
   const [searchQuery, setSearchQuery] = useState('');
@@ -59,14 +66,20 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
   const [coachToDelete, setCoachToDelete] = useState<Coach | null>(null);
   const [selectedPaySlipCoach, setSelectedPaySlipCoach] = useState<CoachSalarySummary | null>(null);
 
-  // Paid status tracker in state
-  const [paidCoachesMap, setPaidCoachesMap] = useState<Record<string, boolean>>({});
+  // Pay Coach Modal
+  const [coachToPay, setCoachToPay] = useState<{ summary: CoachSalarySummary; pendingAmount: number } | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Cliq' | 'Bank Transfer' | 'Credit Card'>('Cash');
+  const [paymentNote, setPaymentNote] = useState('');
+
+  // Paid status & payments tracker in state
+  const [paidCoachesMap, setPaidCoachesMap] = useState<Record<string, { isPaid: boolean; paidAmount?: number; paidDate?: string; paymentMethod?: string; notes?: string }>>(() => loadCoachPaidMap());
 
   // Reference date: September 2026
   const referenceDate = useMemo(() => new Date('2026-09-21T12:00:00'), []);
 
   // Compute date bounds
-  const { startDateStr, endDateStr, periodLabel } = useMemo(() => {
+  const { startDateStr, endDateStr, periodLabel, monthEndDeadlineStr } = useMemo(() => {
     const end = new Date(referenceDate);
     const start = new Date(referenceDate);
 
@@ -77,7 +90,8 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
       return {
         startDateStr: sStr,
         endDateStr: eStr,
-        periodLabel: 'September 2026 (Month to Date)',
+        periodLabel: 'September 2026 (Current Month)',
+        monthEndDeadlineStr: 'Sep 30, 2026',
       };
     } else if (periodPreset === 'last_month') {
       start.setMonth(start.getMonth() - 1, 1);
@@ -87,7 +101,8 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
       return {
         startDateStr: sStr,
         endDateStr: eStr,
-        periodLabel: 'August 2026 (Full Month)',
+        periodLabel: 'August 2026 (Previous Month)',
+        monthEndDeadlineStr: 'Aug 31, 2026',
       };
     } else if (periodPreset === 'last_30_days') {
       start.setDate(start.getDate() - 30);
@@ -97,12 +112,14 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
         startDateStr: sStr,
         endDateStr: eStr,
         periodLabel: 'Last 30 Days',
+        monthEndDeadlineStr: 'Month End',
       };
     } else {
       return {
         startDateStr: customStartDate || '2020-01-01',
         endDateStr: customEndDate || '2030-12-31',
         periodLabel: `${customStartDate || 'Start'} to ${customEndDate || 'End'}`,
+        monthEndDeadlineStr: 'Custom Period End',
       };
     }
   }, [periodPreset, referenceDate, customStartDate, customEndDate]);
@@ -114,7 +131,7 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
       (a) => a.date >= startDateStr && a.date <= endDateStr
     );
 
-    // Group attendance records by unique session: `${date}__${className}`
+    // Group attendance records by unique session: `${date}__${className}__${coach}`
     const sessionMap = new Map<string, { date: string; className: string; coachName: string; records: AttendanceRecord[] }>();
 
     periodAttendance.forEach((rec) => {
@@ -211,32 +228,125 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
     });
   }, [coaches, attendance, startDateStr, endDateStr]);
 
-  // Filtered summaries by search query
-  const filteredSummaries = useMemo(() => {
-    if (!searchQuery.trim()) return coachSalarySummaries;
-    const q = searchQuery.toLowerCase();
-    return coachSalarySummaries.filter(
-      (s) =>
-        s.coach.fullName.toLowerCase().includes(q) ||
-        (s.coach.nickname && s.coach.nickname.toLowerCase().includes(q)) ||
-        s.coach.role.toLowerCase().includes(q) ||
-        s.coach.specialty.some((spec) => spec.toLowerCase().includes(q))
-    );
-  }, [coachSalarySummaries, searchQuery]);
+  // Enriched salary items with paid & month-end pending amounts
+  const enrichedCoachSummaries = useMemo(() => {
+    return coachSalarySummaries.map((summary) => {
+      const paidInfo = paidCoachesMap[summary.coach.id];
+      const isPaid = !!paidInfo?.isPaid;
+      const paidAmount = isPaid ? (paidInfo?.paidAmount ?? summary.totalEarnings) : 0;
+      const pendingAmount = Math.max(0, summary.totalEarnings - paidAmount);
 
-  // Overall totals
+      return {
+        ...summary,
+        isPaid,
+        paidAmount,
+        pendingAmount,
+        paidDate: paidInfo?.paidDate,
+        paymentMethod: paidInfo?.paymentMethod,
+        notes: paidInfo?.notes,
+      };
+    });
+  }, [coachSalarySummaries, paidCoachesMap]);
+
+  // Overall Financial Totals
   const totalPayrollDue = useMemo(
-    () => coachSalarySummaries.reduce((acc, s) => acc + s.totalEarnings, 0),
-    [coachSalarySummaries]
+    () => enrichedCoachSummaries.reduce((acc, s) => acc + s.totalEarnings, 0),
+    [enrichedCoachSummaries]
   );
+
+  const totalPaidAmount = useMemo(
+    () => enrichedCoachSummaries.reduce((acc, s) => acc + s.paidAmount, 0),
+    [enrichedCoachSummaries]
+  );
+
+  const totalPendingMonthEnd = useMemo(
+    () => enrichedCoachSummaries.reduce((acc, s) => acc + s.pendingAmount, 0),
+    [enrichedCoachSummaries]
+  );
+
   const totalClassesTaught = useMemo(
-    () => coachSalarySummaries.reduce((acc, s) => acc + s.sessionsCount, 0),
-    [coachSalarySummaries]
+    () => enrichedCoachSummaries.reduce((acc, s) => acc + s.sessionsCount, 0),
+    [enrichedCoachSummaries]
   );
-  const totalStudentCheckIns = useMemo(
-    () => coachSalarySummaries.reduce((acc, s) => acc + s.totalStudentsTaught, 0),
-    [coachSalarySummaries]
+
+  // Filtered summaries by status & search query
+  const filteredSummaries = useMemo(() => {
+    return enrichedCoachSummaries.filter((s) => {
+      // Status filter
+      if (statusFilter === 'PENDING' && s.pendingAmount <= 0) return false;
+      if (statusFilter === 'PAID' && !s.isPaid) return false;
+
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          s.coach.fullName.toLowerCase().includes(q) ||
+          (s.coach.nickname && s.coach.nickname.toLowerCase().includes(q)) ||
+          s.coach.role.toLowerCase().includes(q) ||
+          s.coach.beltRank.toLowerCase().includes(q) ||
+          s.coach.specialty.some((spec) => spec.toLowerCase().includes(q))
+        );
+      }
+      return true;
+    });
+  }, [enrichedCoachSummaries, statusFilter, searchQuery]);
+
+  const pendingCoachesCount = useMemo(
+    () => enrichedCoachSummaries.filter((s) => s.pendingAmount > 0).length,
+    [enrichedCoachSummaries]
   );
+
+  const paidCoachesCount = useMemo(
+    () => enrichedCoachSummaries.filter((s) => s.isPaid).length,
+    [enrichedCoachSummaries]
+  );
+
+  // Handle Recording Payment / Marking as Paid
+  const handleOpenPayModal = (summary: CoachSalarySummary, pendingAmount: number) => {
+    setCoachToPay({ summary, pendingAmount });
+    setPaymentAmount(pendingAmount > 0 ? pendingAmount : summary.totalEarnings);
+    setPaymentMethod('Cash');
+    setPaymentNote(`Month-end salary payment for ${periodLabel}`);
+  };
+
+  const handleConfirmPayment = () => {
+    if (!coachToPay) return;
+    const coachId = coachToPay.summary.coach.id;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const updatedMap = {
+      ...paidCoachesMap,
+      [coachId]: {
+        isPaid: true,
+        paidAmount: Number(paymentAmount) || coachToPay.summary.totalEarnings,
+        paidDate: todayStr,
+        paymentMethod,
+        notes: paymentNote.trim(),
+      },
+    };
+
+    setPaidCoachesMap(updatedMap);
+    saveCoachPaidMap(updatedMap);
+    setCoachToPay(null);
+  };
+
+  const handleTogglePaidQuick = (coachId: string, currentPaid: boolean, totalAmount: number) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const updatedMap = {
+      ...paidCoachesMap,
+      [coachId]: currentPaid
+        ? { isPaid: false, paidAmount: 0 }
+        : {
+            isPaid: true,
+            paidAmount: totalAmount,
+            paidDate: todayStr,
+            paymentMethod: 'Cash',
+            notes: `Full payout marked on ${todayStr}`,
+          },
+    };
+    setPaidCoachesMap(updatedMap);
+    saveCoachPaidMap(updatedMap);
+  };
 
   // Export payroll to CSV
   const handleExportPayrollCSV = () => {
@@ -244,29 +354,37 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
       'Coach ID',
       'Coach Name',
       'Belt Rank',
+      'Academy Role',
       'Pay Model',
       'Base Rate',
-      'Sessions Taught',
-      'Students Coached',
+      'Sessions Coached',
+      'Students Taught',
       'Avg Class Size',
-      'Base Earnings (JOD)',
-      'Bonus Earnings (JOD)',
-      'Total Salary (JOD)',
+      'Gross Salary (JOD)',
+      'Paid Amount (JOD)',
+      'Pending Needed at Month End (JOD)',
+      'Payout Status',
+      'Paid Date',
+      'Payment Method',
       'Period',
     ];
 
-    const rows = coachSalarySummaries.map((s) => [
+    const rows = enrichedCoachSummaries.map((s) => [
       s.coach.id,
       `"${s.coach.fullName}${s.coach.nickname ? ` (${s.coach.nickname})` : ''}"`,
       s.coach.beltRank,
+      `"${s.coach.role}"`,
       s.coach.payType,
       s.coach.rate,
       s.sessionsCount,
       s.totalStudentsTaught,
       s.averageClassSize,
-      s.baseEarnings.toFixed(2),
-      s.bonusEarnings.toFixed(2),
       s.totalEarnings.toFixed(2),
+      s.paidAmount.toFixed(2),
+      s.pendingAmount.toFixed(2),
+      s.isPaid ? 'PAID' : 'PENDING_MONTH_END',
+      s.paidDate || '—',
+      s.paymentMethod || '—',
       `"${periodLabel}"`,
     ]);
 
@@ -275,624 +393,384 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Coach_Payroll_${periodPreset}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `Coach_Salaries_Payroll_${periodPreset}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Header & Action Controls */}
-      <div className="bg-stone-900 rounded-2xl p-5 border border-stone-800 shadow-sm text-stone-100">
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-amber-950/80 border border-amber-700/60 flex items-center justify-center text-amber-400 shadow-inner">
-              <Award className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-black text-white tracking-tight">
-                  Coaches Directory & Salary Calculator
-                </h2>
-                <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider bg-red-950 text-red-300 rounded-full border border-red-800">
-                  Payroll Engine
-                </span>
-              </div>
-              <p className="text-xs text-stone-400 mt-1">
-                Track instructors giving classes, analyze coaching attendance headcounts, and calculate itemized salaries.
-              </p>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <button
-              onClick={handleExportPayrollCSV}
-              className="px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-xs"
-              title="Download spreadsheet report of coach salaries"
-            >
-              <Download className="w-3.5 h-3.5 text-stone-400" />
-              <span>Export Payroll CSV</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setEditingCoach(null);
-                setIsAddEditModalOpen(true);
-              }}
-              className="px-3.5 py-2 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-md"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Add New Coach</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Time Period Filter Bar & Search */}
-        <div className="mt-5 pt-4 border-t border-stone-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-          {/* Period selector */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-stone-400 font-medium inline-flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5 text-amber-400" />
-              Payroll Period:
-            </span>
-            {[
-              { id: 'this_month', label: 'This Month (Sep 2026)' },
-              { id: 'last_month', label: 'Last Month (Aug 2026)' },
-              { id: 'last_30_days', label: 'Last 30 Days' },
-              { id: 'custom', label: 'Custom Dates' },
-            ].map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setPeriodPreset(p.id as any)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  periodPreset === p.id
-                    ? 'bg-amber-500 text-black font-bold shadow-xs'
-                    : 'bg-stone-800/80 text-stone-300 hover:bg-stone-700 border border-stone-700/60'
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-
-            {periodPreset === 'custom' && (
-              <div className="flex items-center gap-2 pl-2">
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="bg-stone-950 border border-stone-700 rounded-lg px-2.5 py-1 text-xs text-white"
-                />
-                <span className="text-stone-500 text-xs">to</span>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="bg-stone-950 border border-stone-700 rounded-lg px-2.5 py-1 text-xs text-white"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Search bar */}
-          <div className="relative w-full md:w-64">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search coach, belt, specialty..."
-              className="w-full bg-stone-950 border border-stone-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500 placeholder-stone-500"
-            />
-          </div>
-        </div>
-
-        {/* View Switcher Tabs */}
-        <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-stone-800 overflow-x-auto">
+    <div className="space-y-4">
+      {/* 1. SEARCH COACH SPACE */}
+      <div className="relative w-full">
+        <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-500" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search coach by name, specialty, or phone..."
+          className="w-full bg-stone-900 border border-stone-800 rounded-2xl pl-10 pr-10 py-2.5 sm:py-3 text-xs sm:text-sm text-white placeholder-stone-500 focus:outline-hidden focus:border-amber-500 shadow-sm transition-all"
+        />
+        {searchQuery && (
           <button
-            onClick={() => setViewMode('DIRECTORY')}
-            className={`px-3.5 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-2 transition-all whitespace-nowrap ${
-              viewMode === 'DIRECTORY'
-                ? 'bg-red-600 text-white shadow-xs'
-                : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800'
-            }`}
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+            title="Clear search"
           >
-            <Users className="w-3.5 h-3.5" />
-            <span>Coaches Directory Cards ({coaches.length})</span>
+            <X className="w-3.5 h-3.5" />
           </button>
+        )}
+      </div>
 
-          <button
-            onClick={() => setViewMode('PAYROLL_TABLE')}
-            className={`px-3.5 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-2 transition-all whitespace-nowrap ${
-              viewMode === 'PAYROLL_TABLE'
-                ? 'bg-red-600 text-white shadow-xs'
-                : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800'
-            }`}
-          >
-            <DollarSign className="w-3.5 h-3.5" />
-            <span>Salary & Compensation Breakdown</span>
-          </button>
+      {/* 2. MAIN TABLE: COACH SALARIES, PAYMENTS PAID & PAYMENTS NEEDED AT MONTH END */}
+      <div className="bg-stone-900 rounded-2xl border border-stone-800 overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-stone-950 text-stone-400 text-[10px] uppercase tracking-wider font-black border-b border-stone-800">
+              <tr>
+                <th className="py-3.5 px-4">Coach / Instructor</th>
+                <th className="py-3.5 px-3">Belt Rank</th>
+                <th className="py-3.5 px-3">Pay Structure</th>
+                <th className="py-3.5 px-3 text-center">Sessions Coached</th>
+                <th className="py-3.5 px-3 text-right">Total Month Salary</th>
+                <th className="py-3.5 px-3 text-right">Paid Amount</th>
+                <th className="py-3.5 px-3 text-right">Needed at Month End</th>
+                <th className="py-3.5 px-3 text-center">Payout Status</th>
+                <th className="py-3.5 px-4 text-right">Payment Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-800/70 font-sans">
+              {filteredSummaries.map((summary) => {
+                const isPaid = summary.isPaid;
+                const pending = summary.pendingAmount;
 
-          <button
-            onClick={() => setViewMode('SESSIONS_FEED')}
-            className={`px-3.5 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-2 transition-all whitespace-nowrap ${
-              viewMode === 'SESSIONS_FEED'
-                ? 'bg-red-600 text-white shadow-xs'
-                : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span>Coaching Class Log ({totalClassesTaught} sessions)</span>
-          </button>
+                return (
+                  <tr key={summary.coach.id} className="hover:bg-stone-850/50 transition-colors">
+                    {/* Coach Info */}
+                    <td className="py-3.5 px-4">
+                      <div className="font-black text-white text-sm">
+                        {summary.coach.fullName}
+                      </div>
+                      <div className="text-[11px] text-stone-400 mt-0.5 flex items-center gap-1.5">
+                        {summary.coach.nickname && (
+                          <span className="text-amber-400 font-medium">"{summary.coach.nickname}"</span>
+                        )}
+                        <span>•</span>
+                        <span>{summary.coach.role}</span>
+                      </div>
+                    </td>
+
+                    {/* Belt */}
+                    <td className="py-3.5 px-3">
+                      <BeltBadge
+                        belt={summary.coach.beltRank}
+                        stripes={summary.coach.stripes}
+                        size="sm"
+                      />
+                    </td>
+
+                    {/* Pay Model */}
+                    <td className="py-3.5 px-3">
+                      <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-stone-950 text-stone-300 border border-stone-800">
+                        {summary.coach.payType === 'per_class' && `${formatCurrency(summary.coach.rate, 'JOD')} / class`}
+                        {summary.coach.payType === 'hourly' && `${formatCurrency(summary.coach.rate, 'JOD')} / hr`}
+                        {summary.coach.payType === 'monthly_fixed' && `${formatCurrency(summary.coach.rate, 'JOD')} / mo fixed`}
+                        {summary.coach.payType === 'per_student' && `${formatCurrency(summary.coach.rate, 'JOD')} / student`}
+                      </span>
+                    </td>
+
+                    {/* Sessions & Headcount */}
+                    <td className="py-3.5 px-3 text-center">
+                      <span className="font-bold text-white text-sm">
+                        {summary.sessionsCount}
+                      </span>
+                      <span className="text-[10px] text-stone-500 block">
+                        {summary.totalStudentsTaught} students (avg {summary.averageClassSize})
+                      </span>
+                    </td>
+
+                    {/* Total Month Salary */}
+                    <td className="py-3.5 px-3 text-right font-mono font-bold text-white text-sm">
+                      {formatCurrency(summary.totalEarnings, 'JOD')}
+                    </td>
+
+                    {/* Paid Amount */}
+                    <td className="py-3.5 px-3 text-right font-mono text-sm">
+                      {summary.paidAmount > 0 ? (
+                        <span className="text-emerald-400 font-bold">
+                          {formatCurrency(summary.paidAmount, 'JOD')}
+                        </span>
+                      ) : (
+                        <span className="text-stone-500">0.00 JOD</span>
+                      )}
+                      {summary.paidDate && (
+                        <span className="text-[10px] text-stone-500 block font-sans">
+                          {summary.paidDate} ({summary.paymentMethod || 'Cash'})
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Needed at End of Month (Pending Balance) */}
+                    <td className="py-3.5 px-3 text-right font-mono font-black text-sm">
+                      {pending > 0 ? (
+                        <div className="inline-flex flex-col items-end">
+                          <span className="px-2 py-0.5 rounded-lg bg-amber-950 text-amber-300 border border-amber-800 text-xs font-black">
+                            {formatCurrency(pending, 'JOD')}
+                          </span>
+                          <span className="text-[10px] text-amber-400/80 font-sans mt-0.5">
+                            Due {monthEndDeadlineStr}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-emerald-400 font-bold text-xs inline-flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>0.00 (Settled)</span>
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Payout Status Badge */}
+                    <td className="py-3.5 px-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePaidQuick(summary.coach.id, isPaid, summary.totalEarnings)}
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-flex items-center gap-1 transition-all cursor-pointer ${
+                          isPaid
+                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 hover:bg-emerald-900'
+                            : 'bg-amber-950/80 text-amber-300 border border-amber-800 hover:bg-amber-900'
+                        }`}
+                        title="Click to quickly toggle paid status"
+                      >
+                        {isPaid ? (
+                          <>
+                            <Check className="w-3 h-3" />
+                            <span>Paid in Full</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="w-3 h-3 text-amber-400" />
+                            <span>Pending Pay</span>
+                          </>
+                        )}
+                      </button>
+                    </td>
+
+                    {/* Payment Actions */}
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {pending > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPayModal(summary, pending)}
+                            className="px-2.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 rounded-lg text-xs font-black inline-flex items-center gap-1 transition-all shadow-xs cursor-pointer active:scale-95"
+                            title="Record salary payment disbursement"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
+                            <span>Pay Coach</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPayModal(summary, 0)}
+                            className="px-2.5 py-1.5 bg-stone-800 hover:bg-stone-750 text-stone-300 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Update payment details"
+                          >
+                            <Receipt className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Receipt</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPaySlipCoach(summary)}
+                          className="p-1.5 bg-stone-800 hover:bg-stone-750 text-stone-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                          title="View itemized pay slip & session breakdown"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-amber-400" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCoach(summary.coach);
+                            setIsAddEditModalOpen(true);
+                          }}
+                          className="p-1.5 bg-stone-800 hover:bg-stone-750 text-stone-300 rounded-lg transition-colors cursor-pointer"
+                          title="Edit Coach Details & Salary Rate"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCoachToDelete(summary.coach)}
+                          className="p-1.5 bg-stone-800 hover:bg-red-950 hover:text-red-400 text-stone-400 rounded-lg transition-colors cursor-pointer"
+                          title="Delete Coach"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {filteredSummaries.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="p-10 text-center text-stone-500 italic">
+                    {coaches.filter((c) => !c.isDeleted).length === 0
+                      ? 'No coaches registered on the roster. Click "+ Add Coach" to register professors and compensation structures.'
+                      : 'No coach records match the current status and search filters.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* KPI METRICS SUMMARY ROW */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        <div className="bg-stone-900 border border-stone-800 p-4 rounded-xl shadow-xs">
-          <div className="text-xs text-stone-400 flex items-center justify-between mb-1">
-            <span>Active Instructors</span>
-            <Users className="w-4 h-4 text-blue-400" />
-          </div>
-          <div className="text-2xl font-black text-white">
-            {coaches.filter((c) => c.active && !c.isDeleted).length}
-          </div>
-          <div className="text-[11px] text-stone-500 mt-1">Teaching BJJ programs</div>
-        </div>
-
-        <div className="bg-stone-900 border border-stone-800 p-4 rounded-xl shadow-xs">
-          <div className="text-xs text-stone-400 flex items-center justify-between mb-1">
-            <span>Sessions Taught ({periodPreset === 'this_month' ? 'Sep' : 'Period'})</span>
-            <Calendar className="w-4 h-4 text-purple-400" />
-          </div>
-          <div className="text-2xl font-black text-white">{totalClassesTaught}</div>
-          <div className="text-[11px] text-purple-400 font-medium mt-1">
-            Sat, Mon & Wed classes
-          </div>
-        </div>
-
-        <div className="bg-stone-900 border border-stone-800 p-4 rounded-xl shadow-xs">
-          <div className="text-xs text-stone-400 flex items-center justify-between mb-1">
-            <span>Students Coached</span>
-            <Award className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="text-2xl font-black text-white">{totalStudentCheckIns}</div>
-          <div className="text-[11px] text-emerald-400 font-medium mt-1">
-            {totalClassesTaught > 0
-              ? `Avg ${(totalStudentCheckIns / totalClassesTaught).toFixed(1)} / class`
-              : '0 avg'}
-          </div>
-        </div>
-
-        <div className="bg-stone-900 border border-amber-900/60 p-4 rounded-xl shadow-xs bg-gradient-to-br from-stone-900 to-amber-950/20">
-          <div className="text-xs text-amber-400 flex items-center justify-between mb-1 font-semibold">
-            <span>Total Payroll Due</span>
-            <DollarSign className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="text-2xl font-black text-amber-300 font-mono-digits">
-            {formatCurrency(totalPayrollDue, 'JOD')}
-          </div>
-          <div className="text-[11px] text-stone-400 mt-1">Base + Student head bonuses</div>
-        </div>
-      </div>
-
-      {/* VIEW 1: COACHES DIRECTORY CARDS */}
-      {viewMode === 'DIRECTORY' && (
-        filteredSummaries.length === 0 ? (
-          <div className="bg-stone-900/60 border border-dashed border-stone-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center">
-            <div className="w-12 h-12 rounded-2xl bg-stone-800/80 flex items-center justify-center mb-3 text-stone-400">
-              <Award className="w-6 h-6 text-amber-500" />
-            </div>
-            <h3 className="text-base font-bold text-white mb-1">
-              {coaches.filter((c) => !c.isDeleted).length === 0 ? 'No Instructors Registered' : 'No Instructors Match Filter'}
-            </h3>
-            <p className="text-xs text-stone-400 max-w-md mb-4">
-              {coaches.filter((c) => !c.isDeleted).length === 0
-                ? 'Your coaching directory is clean following factory reset. Add your head professor and assistant instructors with their ranks and pay structures.'
-                : 'No coaches match your search query.'}
-            </p>
-            {coaches.filter((c) => !c.isDeleted).length === 0 && (
+      {/* MODAL 1: RECORD SALARY PAYMENT DISBURSEMENT */}
+      {coachToPay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="p-5 border-b border-stone-800 bg-stone-950 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-white text-base">
+                    Disburse Coach Salary
+                  </h3>
+                  <p className="text-xs text-stone-400">
+                    To: <strong className="text-amber-300">{coachToPay.summary.coach.fullName}</strong>
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={() => {
-                  setEditingCoach(null);
-                  setIsAddEditModalOpen(true);
-                }}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 transition-colors cursor-pointer shadow-md"
+                onClick={() => setCoachToPay(null)}
+                className="p-1.5 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
-                <span>+ Add First Coach / Instructor</span>
+                <X className="w-5 h-5" />
               </button>
-            )}
-          </div>
-        ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-          {filteredSummaries.map(({ coach, sessionsCount, totalStudentsTaught, totalEarnings, sessions }) => {
-            const isPaid = paidCoachesMap[coach.id];
+            </div>
 
-            return (
-              <div
-                key={coach.id}
-                className="bg-stone-900 border border-stone-800 rounded-2xl p-5 shadow-sm hover:border-stone-700 transition-all flex flex-col justify-between"
-              >
+            {/* Form */}
+            <div className="p-5 space-y-4">
+              {/* Summary Card */}
+              <div className="p-3.5 bg-stone-950 rounded-2xl border border-stone-800 flex items-center justify-between text-xs">
                 <div>
-                  {/* Coach Photo, Name & Belt */}
-                  <div className="flex items-start gap-3.5">
-                    <div className="relative flex-shrink-0">
-                      <img
-                        src={coach.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&h=240&q=80'}
-                        alt={coach.fullName}
-                        className="w-14 h-14 rounded-2xl object-cover border-2 border-stone-700 shadow-md"
-                      />
-                      <span
-                        className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-stone-900 ${
-                          coach.active ? 'bg-emerald-400' : 'bg-stone-500'
-                        }`}
-                        title={coach.active ? 'Active Instructor' : 'Inactive'}
-                      />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <h3 className="font-bold text-white text-base leading-tight truncate">
-                          {coach.fullName}
-                        </h3>
-                      </div>
-                      {coach.nickname && (
-                        <p className="text-xs text-amber-400 font-medium">"{coach.nickname}"</p>
-                      )}
-                      <p className="text-[11px] text-stone-400 truncate mt-0.5">{coach.role}</p>
-
-                      <div className="mt-1.5">
-                        <BeltBadge belt={coach.beltRank} stripes={coach.stripes} size="sm" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Compensation Badge */}
-                  <div className="mt-4 p-2.5 rounded-xl bg-stone-950/80 border border-stone-800/80 flex items-center justify-between text-xs">
-                    <span className="text-stone-400">Pay Structure:</span>
-                    <span className="font-bold text-emerald-400">
-                      {coach.payType === 'per_class' && `${formatCurrency(coach.rate, 'JOD')} / class session`}
-                      {coach.payType === 'hourly' && `${formatCurrency(coach.rate, 'JOD')} / hour`}
-                      {coach.payType === 'monthly_fixed' && `${formatCurrency(coach.rate, 'JOD')} / month`}
-                      {coach.payType === 'per_student' && `${formatCurrency(coach.rate, 'JOD')} / student check-in`}
-                    </span>
-                  </div>
-
-                  {/* Period Performance Stats */}
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-stone-800/50 p-2 rounded-lg border border-stone-800">
-                      <div className="text-[10px] text-stone-400 uppercase font-bold">Sessions</div>
-                      <div className="text-sm font-black text-white mt-0.5">{sessionsCount}</div>
-                    </div>
-                    <div className="bg-stone-800/50 p-2 rounded-lg border border-stone-800">
-                      <div className="text-[10px] text-stone-400 uppercase font-bold">Students</div>
-                      <div className="text-sm font-black text-white mt-0.5">{totalStudentsTaught}</div>
-                    </div>
-                    <div className="bg-amber-950/40 p-2 rounded-lg border border-amber-800/40">
-                      <div className="text-[10px] text-amber-400 uppercase font-bold">Payout</div>
-                      <div className="text-sm font-black text-amber-300 mt-0.5 font-mono-digits">
-                        {formatCurrency(totalEarnings, 'JOD')}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Specialties Pills */}
-                  {coach.specialty && coach.specialty.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      {coach.specialty.map((spec, i) => (
-                        <span
-                          key={i}
-                          className="px-2 py-0.5 rounded text-[10px] bg-stone-800 text-stone-300 border border-stone-700/60"
-                        >
-                          {spec}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Bio / Notes */}
-                  {coach.bio && (
-                    <p className="text-xs text-stone-400 mt-2.5 line-clamp-2 italic">
-                      "{coach.bio}"
-                    </p>
-                  )}
+                  <span className="text-stone-400 block">Total Month Obligation:</span>
+                  <span className="font-bold text-white text-sm">
+                    {formatCurrency(coachToPay.summary.totalEarnings, 'JOD')}
+                  </span>
                 </div>
-
-                {/* Card Actions Footer */}
-                <div className="mt-4 pt-3 border-t border-stone-800 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() =>
-                      setSelectedPaySlipCoach({
-                        coach,
-                        sessionsCount,
-                        totalStudentsTaught,
-                        averageClassSize:
-                          sessionsCount > 0
-                            ? Math.round((totalStudentsTaught / sessionsCount) * 10) / 10
-                            : 0,
-                        baseEarnings:
-                          coach.payType === 'monthly_fixed'
-                            ? coach.rate
-                            : sessions.reduce((acc, s) => acc + s.basePay, 0),
-                        bonusEarnings: sessions.reduce((acc, s) => acc + s.bonusPay, 0),
-                        totalEarnings,
-                        sessions,
-                      })
-                    }
-                    className="px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Pay Slip</span>
-                  </button>
-
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => {
-                          setEditingCoach(coach);
-                          setIsAddEditModalOpen(true);
-                        }}
-                        className="p-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-lg transition-colors cursor-pointer"
-                        title="Edit Coach Details & Salary Rate"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-
-                      <button
-                        onClick={() => setCoachToDelete(coach)}
-                        className="p-1.5 bg-stone-800 hover:bg-red-950 hover:text-red-400 text-stone-400 hover:border-red-800/60 rounded-lg transition-colors cursor-pointer"
-                        title="Delete Coach"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                <div className="text-right">
+                  <span className="text-amber-400 block font-bold">Needed at Month End:</span>
+                  <span className="font-black text-amber-300 text-sm font-mono">
+                    {formatCurrency(coachToPay.pendingAmount, 'JOD')}
+                  </span>
                 </div>
               </div>
-            );
-          })}
-        </div>
-        )
-      )}
 
-      {/* VIEW 2: SALARY & COMPENSATION BREAKDOWN TABLE */}
-      {viewMode === 'PAYROLL_TABLE' && (
-        <div className="bg-stone-900 rounded-2xl border border-stone-800 overflow-hidden shadow-sm">
-          <div className="p-4 border-b border-stone-800 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-bold text-white">Itemized Coach Salary Ledger</h3>
-              <p className="text-xs text-stone-400">
-                Calculated based on verified attendance logs for: <strong className="text-amber-400">{periodLabel}</strong>
-              </p>
-            </div>
-            <span className="text-xs font-mono text-stone-400">
-              {filteredSummaries.length} Instructors
-            </span>
-          </div>
+              {/* Amount to Disburse */}
+              <div>
+                <label className="block text-xs font-bold text-stone-300 mb-1.5">
+                  Payment Amount to Disburse (JOD) *
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(Number(e.target.value))}
+                  className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3.5 py-2.5 text-white font-mono font-black text-base focus:outline-hidden focus:border-amber-500"
+                />
+              </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-stone-950 text-stone-400 text-[10px] uppercase tracking-wider font-semibold border-b border-stone-800">
-                <tr>
-                  <th className="py-3 px-4">Coach / Instructor</th>
-                  <th className="py-3 px-3">Belt Rank</th>
-                  <th className="py-3 px-3">Pay Structure</th>
-                  <th className="py-3 px-3 text-center">Sessions</th>
-                  <th className="py-3 px-3 text-center">Students Coached</th>
-                  <th className="py-3 px-3 text-right">Base Salary</th>
-                  <th className="py-3 px-3 text-right">Bonus / Commissions</th>
-                  <th className="py-3 px-4 text-right">Gross Total</th>
-                  <th className="py-3 px-3 text-center">Payout Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-800">
-                {filteredSummaries.map((summary) => {
-                  const isPaid = paidCoachesMap[summary.coach.id];
-
-                  return (
-                    <tr key={summary.coach.id} className="hover:bg-stone-800/40 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-white text-sm">
-                          {summary.coach.fullName}
-                        </div>
-                        <div className="text-[11px] text-stone-400">
-                          {summary.coach.nickname && `"${summary.coach.nickname}" • `}
-                          {summary.coach.role}
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-3">
-                        <BeltBadge
-                          belt={summary.coach.beltRank}
-                          stripes={summary.coach.stripes}
-                          size="sm"
-                        />
-                      </td>
-
-                      <td className="py-3.5 px-3">
-                        <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-stone-800 text-stone-200 border border-stone-700">
-                          {summary.coach.payType === 'per_class' && `${formatCurrency(summary.coach.rate, 'JOD')} / class`}
-                          {summary.coach.payType === 'hourly' && `${formatCurrency(summary.coach.rate, 'JOD')} / hr`}
-                          {summary.coach.payType === 'monthly_fixed' && `${formatCurrency(summary.coach.rate, 'JOD')} / mo fixed`}
-                          {summary.coach.payType === 'per_student' && `${formatCurrency(summary.coach.rate, 'JOD')} / student`}
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-3 text-center font-bold text-white">
-                        {summary.sessionsCount}
-                      </td>
-
-                      <td className="py-3.5 px-3 text-center font-medium text-stone-300">
-                        {summary.totalStudentsTaught}
-                        <span className="text-[10px] text-stone-500 block">
-                          avg {summary.averageClassSize}/cls
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-3 text-right font-mono text-stone-300">
-                        {formatCurrency(summary.baseEarnings, 'JOD')}
-                      </td>
-
-                      <td className="py-3.5 px-3 text-right font-mono text-emerald-400">
-                        {summary.bonusEarnings > 0 ? `+${formatCurrency(summary.bonusEarnings, 'JOD')}` : '—'}
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right font-mono font-black text-amber-300 text-sm">
-                        {formatCurrency(summary.totalEarnings, 'JOD')}
-                      </td>
-
-                      <td className="py-3.5 px-3 text-center">
-                        <button
-                          onClick={() =>
-                            setPaidCoachesMap((prev) => ({
-                              ...prev,
-                              [summary.coach.id]: !isPaid,
-                            }))
-                          }
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 transition-all ${
-                            isPaid
-                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                              : 'bg-amber-950/60 text-amber-400 border border-amber-800 hover:bg-amber-900/60'
-                          }`}
-                          title="Click to toggle paid status"
-                        >
-                          {isPaid ? (
-                            <>
-                              <Check className="w-3 h-3" />
-                              <span>Paid</span>
-                            </>
-                          ) : (
-                            <span>Pending Pay</span>
-                          )}
-                        </button>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() => setSelectedPaySlipCoach(summary)}
-                          className="px-2.5 py-1 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded text-xs font-semibold inline-flex items-center gap-1 transition-colors"
-                        >
-                          <FileText className="w-3 h-3 text-amber-400" />
-                          <span>Pay Slip</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* VIEW 3: SESSIONS FEED (ALL CLASSES LED BY COACHES) */}
-      {viewMode === 'SESSIONS_FEED' && (
-        <div className="bg-stone-900 rounded-2xl border border-stone-800 overflow-hidden shadow-sm">
-          <div className="p-4 border-b border-stone-800 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-bold text-white">Class & Mat Sessions Log</h3>
-              <p className="text-xs text-stone-400">
-                Itemized classes taught with student headcount verification.
-              </p>
-            </div>
-            <span className="text-xs text-stone-400 font-mono">
-              {totalClassesTaught} sessions in {periodLabel}
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-stone-950 text-stone-400 text-[10px] uppercase tracking-wider font-semibold border-b border-stone-800">
-                <tr>
-                  <th className="py-3 px-4">Date & Day</th>
-                  <th className="py-3 px-3">Class Session</th>
-                  <th className="py-3 px-3">Coach</th>
-                  <th className="py-3 px-3 text-center">Student Headcount</th>
-                  <th className="py-3 px-3 text-right">Base Pay</th>
-                  <th className="py-3 px-3 text-right">Bonus</th>
-                  <th className="py-3 px-4 text-right">Session Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-800">
-                {coachSalarySummaries.flatMap((summary) =>
-                  summary.sessions.map((sess, idx) => (
-                    <tr
-                      key={`${summary.coach.id}-${sess.date}-${sess.className}-${idx}`}
-                      className="hover:bg-stone-800/40 transition-colors"
+              {/* Payment Method */}
+              <div>
+                <label className="block text-xs font-bold text-stone-300 mb-1.5">
+                  Payment Method
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['Cash', 'Cliq', 'Bank Transfer', 'Credit Card'] as const).map((method) => (
+                    <button
+                      key={method}
+                      type="button"
+                      onClick={() => setPaymentMethod(method)}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                        paymentMethod === method
+                          ? 'bg-amber-500 text-stone-950 border-amber-400 shadow-sm'
+                          : 'bg-stone-950 text-stone-300 border-stone-800 hover:border-stone-700'
+                      }`}
                     >
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-white">{sess.date}</div>
-                        <div className="text-[10px] text-stone-400">
-                          {sess.dayOfWeek || 'Academy Session'} • {sess.time}
-                        </div>
-                      </td>
+                      {method}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-                      <td className="py-3 px-3 font-semibold text-stone-200">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[11px] ${
-                            sess.classCategory === 'Kids'
-                              ? 'bg-amber-950 text-amber-300 border border-amber-800'
-                              : sess.classCategory === 'Teens'
-                              ? 'bg-blue-950 text-blue-300 border border-blue-800'
-                              : 'bg-stone-800 text-stone-200'
-                          }`}
-                        >
-                          {sess.className}
-                        </span>
-                      </td>
+              {/* Receipt Note */}
+              <div>
+                <label className="block text-xs font-bold text-stone-300 mb-1.5">
+                  Payment Notes / Reference #
+                </label>
+                <input
+                  type="text"
+                  value={paymentNote}
+                  onChange={(e) => setPaymentNote(e.target.value)}
+                  placeholder="e.g. Month-end payroll cash envelope"
+                  className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white placeholder-stone-500 focus:outline-hidden focus:border-amber-500"
+                />
+              </div>
 
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-white">{summary.coach.fullName}</div>
-                        <div className="text-[10px] text-stone-400">
-                          {summary.coach.nickname || summary.coach.role}
-                        </div>
-                      </td>
-
-                      <td className="py-3 px-3 text-center font-bold text-emerald-400">
-                        {sess.studentCount} students
-                      </td>
-
-                      <td className="py-3 px-3 text-right font-mono text-stone-300">
-                        {formatCurrency(sess.basePay, 'JOD')}
-                      </td>
-
-                      <td className="py-3 px-3 text-right font-mono text-emerald-400">
-                        {sess.bonusPay > 0 ? `+${formatCurrency(sess.bonusPay, 'JOD')}` : '—'}
-                      </td>
-
-                      <td className="py-3 px-4 text-right font-mono font-bold text-amber-300">
-                        {formatCurrency(sess.totalPay, 'JOD')}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+              {/* Actions */}
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setCoachToPay(null)}
+                  className="px-4 py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmPayment}
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-xl text-xs font-black transition-all shadow-md inline-flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Confirm Payout</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ITEMIZE PAY SLIP MODAL */}
+      {/* MODAL 2: ITEMIZE PAY SLIP MODAL */}
       {selectedPaySlipCoach && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
             {/* Pay Slip Header */}
-            <div className="p-5 border-b border-stone-800 bg-stone-950/80 flex items-center justify-between">
+            <div className="p-5 border-b border-stone-800 bg-stone-950 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-950 border border-amber-800 flex items-center justify-center text-amber-400">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
                   <FileText className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">
+                  <h3 className="font-black text-white text-base">
                     Coach Compensation Statement & Pay Slip
                   </h3>
                   <p className="text-xs text-stone-400">Period: {periodLabel}</p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedPaySlipCoach(null)}
-                className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800"
+                className="p-1.5 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -901,7 +779,7 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
             {/* Pay Slip Body */}
             <div className="p-5 space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
               {/* Coach Summary Banner */}
-              <div className="p-4 rounded-xl bg-stone-950 border border-stone-800 flex items-center justify-between">
+              <div className="p-4 rounded-2xl bg-stone-950 border border-stone-800 flex items-center justify-between">
                 <div>
                   <div className="text-lg font-black text-white">
                     {selectedPaySlipCoach.coach.fullName}
@@ -921,7 +799,7 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
 
                 <div className="text-right">
                   <div className="text-xs text-stone-400 uppercase font-bold">Total Earnings</div>
-                  <div className="text-2xl font-black text-amber-300 font-mono-digits">
+                  <div className="text-2xl font-black text-amber-300 font-mono">
                     {formatCurrency(selectedPaySlipCoach.totalEarnings, 'JOD')}
                   </div>
                   <div className="text-[11px] text-stone-400 mt-0.5">
@@ -935,9 +813,9 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
                 <h4 className="text-xs font-bold text-stone-300 uppercase tracking-wider mb-2">
                   Itemized Class Sessions ({selectedPaySlipCoach.sessions.length})
                 </h4>
-                <div className="border border-stone-800 rounded-xl overflow-hidden">
+                <div className="border border-stone-800 rounded-2xl overflow-hidden bg-stone-950">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-stone-950 text-stone-400 text-[10px] uppercase tracking-wider">
+                    <thead className="bg-stone-900 text-stone-400 text-[10px] uppercase tracking-wider font-bold">
                       <tr>
                         <th className="py-2.5 px-3">Date</th>
                         <th className="py-2.5 px-3">Class Session</th>
@@ -956,7 +834,7 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
                         </tr>
                       ) : (
                         selectedPaySlipCoach.sessions.map((sess, idx) => (
-                          <tr key={idx} className="hover:bg-stone-800/30">
+                          <tr key={idx} className="hover:bg-stone-900/40">
                             <td className="py-2.5 px-3 font-mono text-stone-300">{sess.date}</td>
                             <td className="py-2.5 px-3 text-white font-medium">{sess.className}</td>
                             <td className="py-2.5 px-3 text-center font-bold text-emerald-400">
@@ -981,18 +859,20 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
             </div>
 
             {/* Pay Slip Footer */}
-            <div className="p-4 border-t border-stone-800 bg-stone-950/80 flex items-center justify-between">
+            <div className="p-4 border-t border-stone-800 bg-stone-950 flex items-center justify-between">
               <button
+                type="button"
                 onClick={() => window.print()}
-                className="px-3.5 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+                className="px-3.5 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 <span>Print Statement</span>
               </button>
 
               <button
+                type="button"
                 onClick={() => setSelectedPaySlipCoach(null)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-colors"
+                className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black transition-colors cursor-pointer"
               >
                 Done
               </button>
@@ -1001,7 +881,7 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
         </div>
       )}
 
-      {/* ADD / EDIT COACH MODAL */}
+      {/* MODAL 3: ADD / EDIT COACH MODAL */}
       {isAddEditModalOpen && (
         <AddEditCoachModal
           coach={editingCoach}
@@ -1022,12 +902,12 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
         />
       )}
 
-      {/* IN-APP COACH DELETE CONFIRMATION MODAL */}
+      {/* MODAL 4: IN-APP COACH DELETE CONFIRMATION MODAL */}
       {coachToDelete && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-stone-900 border border-red-500/40 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+          <div className="bg-stone-900 border border-red-500/40 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
@@ -1036,7 +916,7 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
               </div>
             </div>
 
-            <div className="p-3.5 bg-stone-950/90 rounded-xl border border-stone-800 space-y-1.5 text-xs">
+            <div className="p-3.5 bg-stone-950 rounded-2xl border border-stone-800 space-y-1.5 text-xs">
               <p className="font-black text-white text-sm">{coachToDelete.fullName}</p>
               <p className="text-stone-400">
                 Rank: <strong className="text-stone-200">{coachToDelete.beltRank} Belt ({coachToDelete.stripes} Stripes)</strong>
@@ -1148,10 +1028,10 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
-        <div className="p-4 sm:p-5 border-b border-stone-800 flex items-center justify-between bg-stone-950/60">
+      <div className="bg-stone-900 border border-stone-800 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
+        <div className="p-4 sm:p-5 border-b border-stone-800 flex items-center justify-between bg-stone-950">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-red-950 border border-red-800 flex items-center justify-center text-red-400">
+            <div className="w-9 h-9 rounded-2xl bg-red-950 border border-red-800 flex items-center justify-center text-red-400">
               <Award className="w-5 h-5" />
             </div>
             <div>
@@ -1164,8 +1044,9 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors"
+            className="p-1.5 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -1182,7 +1063,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Lucas Silva"
-                className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500"
               />
             </div>
 
@@ -1193,7 +1074,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 placeholder="Professor Lucas"
-                className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500"
               />
             </div>
           </div>
@@ -1205,7 +1086,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
               <select
                 value={beltRank}
                 onChange={(e) => setBeltRank(e.target.value as BeltRank)}
-                className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500"
               >
                 <option value="Black">Black Belt</option>
                 <option value="Brown">Brown Belt</option>
@@ -1220,7 +1101,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
               <select
                 value={stripes}
                 onChange={(e) => setStripes(Number(e.target.value) as StripeCount)}
-                className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500"
               >
                 <option value={0}>0 Stripes</option>
                 <option value={1}>1 Stripe</option>
@@ -1240,7 +1121,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
                 placeholder="Head Professor / Youth Director"
-                className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500"
               />
             </div>
 
@@ -1251,7 +1132,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
                 value={avatar}
                 onChange={(e) => setAvatar(e.target.value)}
                 placeholder="https://..."
-                className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500"
               />
             </div>
           </div>
@@ -1265,7 +1146,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="coach@artesuave.bjj"
-                className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500"
               />
             </div>
 
@@ -1276,7 +1157,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="(555) 000-0000"
-                className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500"
               />
             </div>
           </div>
@@ -1294,12 +1175,12 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
                 <select
                   value={payType}
                   onChange={(e) => setPayType(e.target.value as CoachPayType)}
-                  className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+                  className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500"
                 >
-                  <option value="per_class">Per Class Session ($/class)</option>
-                  <option value="hourly">Hourly Rate ($/hour)</option>
-                  <option value="monthly_fixed">Fixed Monthly Stipend ($/mo)</option>
-                  <option value="per_student">Per Student Check-in ($/student)</option>
+                  <option value="per_class">Per Class Session (JOD / class)</option>
+                  <option value="hourly">Hourly Rate (JOD / hour)</option>
+                  <option value="monthly_fixed">Fixed Monthly Stipend (JOD / month)</option>
+                  <option value="per_student">Per Student Check-in (JOD / student)</option>
                 </select>
               </div>
 
@@ -1314,13 +1195,13 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
                   value={rate}
                   onChange={(e) => setRate(Number(e.target.value))}
                   placeholder="45"
-                  className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500 font-bold"
+                  className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500 font-bold"
                 />
               </div>
             </div>
 
             {payType === 'per_class' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-stone-950/50 p-3 rounded-xl border border-stone-800">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-stone-950/50 p-3 rounded-2xl border border-stone-800">
                 <div>
                   <label className="block text-[11px] font-semibold text-stone-300 mb-1">
                     Student Headcount Bonus Threshold
@@ -1331,7 +1212,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
                     value={studentBonusThreshold}
                     onChange={(e) => setStudentBonusThreshold(Number(e.target.value))}
                     placeholder="10"
-                    className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1 text-xs text-white"
+                    className="w-full bg-stone-900 border border-stone-800 rounded-xl px-2.5 py-1 text-xs text-white"
                   />
                   <span className="text-[10px] text-stone-500 mt-0.5 block">
                     e.g. When class exceeds 10 students
@@ -1349,10 +1230,10 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
                     value={studentBonusAmount}
                     onChange={(e) => setStudentBonusAmount(Number(e.target.value))}
                     placeholder="2.5"
-                    className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1 text-xs text-white"
+                    className="w-full bg-stone-900 border border-stone-800 rounded-xl px-2.5 py-1 text-xs text-white"
                   />
                   <span className="text-[10px] text-stone-500 mt-0.5 block">
-                    e.g. +$2.50 per student above threshold
+                    e.g. +2.50 JOD per student above threshold
                   </span>
                 </div>
               </div>
@@ -1369,7 +1250,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
               value={specialtiesText}
               onChange={(e) => setSpecialtiesText(e.target.value)}
               placeholder="Kids BJJ, Teens BJJ, Adult Gi, No-Gi Sparring"
-              className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+              className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500"
             />
           </div>
 
@@ -1380,7 +1261,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               placeholder="Master Carlson Gracie lineage, 10+ years coaching..."
-              className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
+              className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-hidden focus:border-red-500"
             />
           </div>
 
@@ -1390,7 +1271,7 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
               id="coach-active-check"
               checked={active}
               onChange={(e) => setActive(e.target.checked)}
-              className="rounded bg-stone-950 border-stone-700 text-red-600 focus:ring-red-500 w-4 h-4"
+              className="rounded bg-stone-950 border-stone-800 text-red-600 focus:ring-red-500 w-4 h-4"
             />
             <label htmlFor="coach-active-check" className="text-xs text-stone-300 font-semibold cursor-pointer">
               Active Instructor (available for class check-ins)
@@ -1401,13 +1282,13 @@ const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-lg text-xs font-semibold transition-colors"
+              className="px-4 py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold transition-colors shadow-md"
+              className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-colors shadow-md cursor-pointer"
             >
               {coach ? 'Save Changes' : 'Register Coach'}
             </button>

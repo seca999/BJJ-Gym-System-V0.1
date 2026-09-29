@@ -9,15 +9,17 @@ import { CoachesDirectoryView } from './components/CoachesDirectoryView';
 import { PromotionsTrackerView } from './components/PromotionsTrackerView';
 import { ClassCheckInView } from './components/ClassCheckInView';
 import { ScheduleBoardView } from './components/ScheduleBoardView';
+import { ProShopView } from './components/ProShopView';
+import { ReportsAnalyticsView } from './components/ReportsAnalyticsView';
 import { SubscriptionPlansModal } from './components/SubscriptionPlansModal';
 import { DatabaseSettingsModal } from './components/DatabaseSettingsModal';
-import { GymBrandingModal } from './components/GymBrandingModal';
 import { SystemSettingsModal } from './components/SystemSettingsModal';
 import { LoginPage } from './components/LoginPage';
 import { NewMemberModal } from './components/NewMemberModal';
 import { RecordPaymentModal } from './components/RecordPaymentModal';
 import { MemberProfileModal } from './components/MemberProfileModal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { injectCustomFontFace, applyBrandingFonts } from './utils/fontLoader';
 import { 
   Member, 
   PaymentRecord, 
@@ -29,9 +31,12 @@ import {
   TimetableConfig,
   SubscriptionPlan,
   IBJJFTransferRecord,
-  SystemUser
+  SystemUser,
+  ExpenseRecord,
+  MerchSaleRecord
 } from './types';
 import { getSessionUser, clearSessionUser, recordSessionActivity, isSessionExpired } from './utils/authStorage';
+import { getJordanDateStr, getJordanTimeStr } from './utils/timeUtils';
 import { 
   loadMembers, 
   saveMembers, 
@@ -49,6 +54,10 @@ import {
   saveTimetableConfig,
   loadSubscriptionPlans,
   saveSubscriptionPlans,
+  loadExpenses,
+  saveExpenses,
+  loadMerchSales,
+  saveMerchSales,
   resetAllDataToDefault,
   factoryResetDataErase,
   loadSampleDemoData,
@@ -58,6 +67,7 @@ import {
 import { restoreDataFromDiskDatabase } from './utils/databaseManager';
 import { INITIAL_SUBSCRIPTION_PLANS } from './data/sampleData';
 import { evaluateAndAutoTransferMembers } from './utils/ibjjfAgeManager';
+import { processAutomatedRenewalReminders } from './utils/reminderEngine';
 import { Sparkles, X as CloseIcon, Award } from 'lucide-react';
 
 export default function App() {
@@ -70,9 +80,24 @@ export default function App() {
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [timetableConfig, setTimetableConfig] = useState<TimetableConfig>(loadTimetableConfig());
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>(() => loadExpenses());
+  const [sales, setSales] = useState<MerchSaleRecord[]>(() => loadMerchSales());
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [targetCheckInClassId, setTargetCheckInClassId] = useState<string | null>(null);
   const [transferNotifications, setTransferNotifications] = useState<IBJJFTransferRecord[]>([]);
+  const [isHomeHeaderEditorOpen, setIsHomeHeaderEditorOpen] = useState(false);
+  const [checkInSubSection, setCheckInSubSection] = useState<'group' | 'vip'>('group');
+
+  const handleAddExpense = (exp: ExpenseRecord) => {
+    const updated = [exp, ...expenses];
+    setExpenses(updated);
+    saveExpenses(updated);
+  };
+
+  const handleUpdateSales = (updatedSales: MerchSaleRecord[]) => {
+    setSales(updatedSales);
+    saveMerchSales(updatedSales);
+  };
 
   const handleNavigateFromHome = (tab: ActiveTab, classId?: string) => {
     if (classId) {
@@ -111,6 +136,11 @@ export default function App() {
     }
   }, [theme]);
 
+  // Dynamic Custom Font Injection for Academy School Name & Slogan
+  useEffect(() => {
+    applyBrandingFonts(settings);
+  }, [settings]);
+
   // User session state & Security auto-logout (10 minutes)
   const [currentUser, setCurrentUser] = useState<SystemUser | null>(() => getSessionUser());
   const [securityLogoutMessage, setSecurityLogoutMessage] = useState<string | null>(null);
@@ -118,13 +148,18 @@ export default function App() {
   // Modal states
   const [isNewMemberModalOpen, setIsNewMemberModalOpen] = useState(false);
   const [isRecordPaymentModalOpen, setIsRecordPaymentModalOpen] = useState(false);
-  const [isBrandingModalOpen, setIsBrandingModalOpen] = useState(false);
   const [isSubscriptionPlansModalOpen, setIsSubscriptionPlansModalOpen] = useState(false);
   const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState(false);
   const [isSystemSettingsModalOpen, setIsSystemSettingsModalOpen] = useState(false);
+  const [systemSettingsTab, setSystemSettingsTab] = useState<'logs' | 'users' | 'branding' | 'updates' | 'database'>('logs');
   const [paymentPreselectedMemberId, setPaymentPreselectedMemberId] = useState<string | undefined>(undefined);
   const [selectedProfileMember, setSelectedProfileMember] = useState<Member | null>(null);
   const [receiptPayment, setReceiptPayment] = useState<PaymentRecord | null>(null);
+
+  const handleOpenSettings = (tab: 'logs' | 'users' | 'branding' | 'updates' | 'database' = 'logs') => {
+    setSystemSettingsTab(tab);
+    setIsSystemSettingsModalOpen(true);
+  };
 
   const handleLogout = (customMessage?: string) => {
     clearSessionUser();
@@ -172,6 +207,7 @@ export default function App() {
     const loadedRawMembers = loadMembers();
     // Run IBJJF automated age category check (Kids -> Teens -> Adults)
     const { updatedMembers, transferEvents } = evaluateAndAutoTransferMembers(loadedRawMembers);
+    processAutomatedRenewalReminders(updatedMembers);
     if (transferEvents.length > 0) {
       saveMembers(updatedMembers);
       setMembers(updatedMembers);
@@ -187,6 +223,8 @@ export default function App() {
     setCoaches(loadCoaches());
     setTimetableConfig(loadTimetableConfig());
     setSubscriptionPlans(loadSubscriptionPlans());
+    setExpenses(loadExpenses());
+    setSales(loadMerchSales());
 
     // Silent startup sync from disk SQLite DB to ensure file-based changes (e.g. deletions) are reflected
     restoreDataFromDiskDatabase().then((res) => {
@@ -201,6 +239,8 @@ export default function App() {
         setCoaches(loadCoaches());
         setTimetableConfig(loadTimetableConfig());
         setSubscriptionPlans(loadSubscriptionPlans());
+        setExpenses(loadExpenses());
+        setSales(loadMerchSales());
       }
     }).catch(() => {});
   }, []);
@@ -208,6 +248,7 @@ export default function App() {
   // Sync to local storage and verify IBJJF transitions
   const updateMembersState = (newMembers: Member[]) => {
     const { updatedMembers, transferEvents } = evaluateAndAutoTransferMembers(newMembers);
+    processAutomatedRenewalReminders(updatedMembers);
     setMembers(updatedMembers);
     saveMembers(updatedMembers);
     if (transferEvents.length > 0) {
@@ -365,8 +406,8 @@ export default function App() {
     if (!member) return { success: false, message: 'Member not found', remainingAfter: 0 };
 
     const now = new Date();
-    const dateStr = customDateStr || now.toISOString().split('T')[0];
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const dateStr = customDateStr || getJordanDateStr(now);
+    const timeStr = getJordanTimeStr(now, false);
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const sessionDateObj = new Date(dateStr + 'T00:00:00');
     const dayOfWeek = dayNames[sessionDateObj.getDay()];
@@ -661,11 +702,14 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-150 ${
-      theme === 'light' 
-        ? 'bg-stone-100 text-stone-900 selection:bg-red-600 selection:text-white' 
-        : 'bg-stone-950 text-stone-100 selection:bg-red-600 selection:text-white'
-    }`}>
+    <div 
+      className={`min-h-screen flex flex-col font-sans transition-colors duration-150 ${
+        theme === 'light' 
+          ? 'text-stone-900 selection:bg-red-600 selection:text-white' 
+          : 'text-stone-100 selection:bg-red-600 selection:text-white'
+      } ${!settings.appBgColor ? (theme === 'light' ? 'bg-stone-100' : 'bg-stone-950') : ''}`}
+      style={settings.appBgColor ? { backgroundColor: settings.appBgColor } : undefined}
+    >
       {/* Top Navbar Header with Logo, Slogan, and Coaches Tab */}
       <Navbar
         activeTab={activeTab}
@@ -678,19 +722,18 @@ export default function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
         currentUser={currentUser}
-        onOpenSystemSettings={() => setIsSystemSettingsModalOpen(true)}
+        onOpenSystemSettings={() => handleOpenSettings('logs')}
         onLogout={handleLogout}
         onOpenNewMember={() => setIsNewMemberModalOpen(true)}
-        onOpenPayment={() => {
-          setPaymentPreselectedMemberId(undefined);
-          setIsRecordPaymentModalOpen(true);
-        }}
-        onOpenBranding={() => setIsBrandingModalOpen(true)}
+        onOpenBranding={() => handleOpenSettings('branding')}
+        onOpenHeaderEditor={() => handleOpenSettings('branding')}
         onOpenSubscriptionPlans={() => setIsSubscriptionPlansModalOpen(true)}
         onOpenDatabase={() => setIsDatabaseModalOpen(true)}
         onResetData={handleLoadSampleData}
         onExportData={handleExportData}
         onImportData={handleImportData}
+        checkInSubSection={checkInSubSection}
+        onSelectCheckInSubSection={setCheckInSubSection}
       />
 
       {/* Main Container - Expanded to utilize full screen space */}
@@ -701,21 +744,21 @@ export default function App() {
             {transferNotifications.map((notif, idx) => (
               <div
                 key={idx}
-                className="p-3.5 bg-gradient-to-r from-amber-950/80 via-stone-900 to-amber-950/80 border border-amber-600/60 rounded-xl flex items-center justify-between text-xs text-amber-200 shadow-md animate-in fade-in slide-in-from-top-2 duration-200"
+                className="p-3.5 bg-gradient-to-r from-red-950/80 via-stone-900 to-red-950/80 border border-red-600/60 rounded-xl flex items-center justify-between text-xs text-stone-200 shadow-md animate-in fade-in slide-in-from-top-2 duration-200"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-amber-600 text-stone-950 flex items-center justify-center font-bold shrink-0">
+                  <div className="w-7 h-7 rounded-lg bg-red-600 text-white flex items-center justify-center font-bold shrink-0">
                     <Award className="w-4 h-4" />
                   </div>
                   <div>
                     <div className="font-bold text-white text-xs flex items-center gap-1.5">
                       <span>IBJJF Automated Category Graduation</span>
-                      <span className="text-[10px] bg-amber-600 text-stone-950 font-black px-1.5 py-0.2 rounded">
+                      <span className="text-[10px] bg-red-600 text-white font-black px-1.5 py-0.2 rounded">
                         Age {notif.age}
                       </span>
                     </div>
-                    <p className="text-[11px] text-amber-200/90 mt-0.5">
-                      <strong>{notif.memberName}</strong> has reached age {notif.age} and was automatically transferred from <strong>{notif.previousCategory}</strong> to <strong>{notif.newCategory}</strong> ({notif.reason}).
+                    <p className="text-[11px] text-stone-300 mt-0.5">
+                      <strong className="text-white">{notif.memberName}</strong> has reached age {notif.age} and was automatically transferred from <strong>{notif.previousCategory}</strong> to <strong>{notif.newCategory}</strong> ({notif.reason}).
                     </p>
                   </div>
                 </div>
@@ -736,6 +779,7 @@ export default function App() {
         {activeTab === 'home' && (
           <HomeWelcomingView
             settings={settings}
+            theme={theme}
             classes={classes}
             timetableConfig={timetableConfig}
             members={members}
@@ -749,6 +793,7 @@ export default function App() {
         {/* Tab 1: Directory (Students & Coaches) */}
         {activeTab === 'members' && (
           <MemberList
+            theme={theme}
             members={members}
             coaches={coaches}
             attendance={attendance}
@@ -767,6 +812,7 @@ export default function App() {
         {/* Tab: Class Check-In & Mat Attendance */}
         {activeTab === 'checkin' && (
           <ClassCheckInView
+            theme={theme}
             classes={classes}
             timetableConfig={timetableConfig}
             members={members}
@@ -780,6 +826,8 @@ export default function App() {
             onOpenPaymentForMember={handleOpenPaymentForMember}
             onOpenSubscriptionPlans={() => setIsSubscriptionPlansModalOpen(true)}
             initialClassId={targetCheckInClassId}
+            initialSubSection={checkInSubSection}
+            onSubSectionChange={(sub) => setCheckInSubSection(sub)}
           />
         )}
 
@@ -800,6 +848,7 @@ export default function App() {
         {/* Tab: Promotions & Belt Progression Directory */}
         {activeTab === 'promotions' && (
           <PromotionsTrackerView
+            theme={theme}
             members={members}
             coaches={coaches}
             onUpdateMember={handleUpdateMember}
@@ -811,15 +860,12 @@ export default function App() {
         {/* Tab 3: Payments & Financial Ledger / Coach Salaries */}
         {activeTab === 'payments' && (
           <PaymentsLedgerView
+            theme={theme}
             payments={payments}
             members={members}
             coaches={coaches}
             attendance={attendance}
             classes={classes}
-            onOpenPayment={() => {
-              setPaymentPreselectedMemberId(undefined);
-              setIsRecordPaymentModalOpen(true);
-            }}
             onViewReceipt={(p) => setReceiptPayment(p)}
             onAddCoach={handleAddCoach}
             onUpdateCoach={handleUpdateCoach}
@@ -827,9 +873,45 @@ export default function App() {
           />
         )}
 
+        {/* Tab: Pro Shop & Gym Merch (GIs, Rashguards, Fighting Gear) */}
+        {activeTab === 'proshop' && (
+          <ProShopView
+            theme={theme}
+            settings={settings}
+            members={members}
+            payments={payments}
+            sales={sales}
+            onUpdateSales={handleUpdateSales}
+            onAddPayment={(payment) => {
+              setPayments((prev) => [payment, ...prev]);
+              savePayments([payment, ...payments]);
+            }}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+          />
+        )}
+
+        {/* Tab: Reports & Analytics Center */}
+        {activeTab === 'reports' && (
+          <ReportsAnalyticsView
+            theme={theme}
+            settings={settings}
+            members={members}
+            payments={payments}
+            sales={sales}
+            expenses={expenses}
+            attendance={attendance}
+            coaches={coaches}
+            classes={classes}
+            subscriptionPlans={subscriptionPlans}
+            onAddExpense={handleAddExpense}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+          />
+        )}
+
         {/* Tab 5: Class Balances & Renewals Center */}
         {activeTab === 'renewals' && (
           <RenewalsAlertsView
+            theme={theme}
             members={members}
             onOpenPaymentForMember={handleOpenPaymentForMember}
             onSelectMember={(m) => setSelectedProfileMember(m)}
@@ -880,15 +962,7 @@ export default function App() {
         settings={settings}
       />
 
-      {/* 5. Gym Branding, Custom Logo & Slogan Modal */}
-      <GymBrandingModal
-        isOpen={isBrandingModalOpen}
-        onClose={() => setIsBrandingModalOpen(false)}
-        settings={settings}
-        onSaveSettings={updateSettingsState}
-      />
-
-      {/* 6. Subscription Plans & Pricing Modal (Kids, Teens, Adults - 8, 12, Unlimited) */}
+      {/* 5. Subscription Plans & Pricing Modal (Kids, Teens, Adults - 8, 12, Unlimited) */}
       <SubscriptionPlansModal
         isOpen={isSubscriptionPlansModalOpen}
         onClose={() => setIsSubscriptionPlansModalOpen(false)}
@@ -899,7 +973,7 @@ export default function App() {
         currencySymbol={settings.currencySymbol}
       />
 
-      {/* 7. Local Database Settings, Path Verification, Health Check & Architecture Modal */}
+      {/* 6. Local Database Settings, Path Verification, Health Check & Architecture Modal */}
       <DatabaseSettingsModal
         isOpen={isDatabaseModalOpen}
         onClose={() => setIsDatabaseModalOpen(false)}
@@ -915,7 +989,7 @@ export default function App() {
         }}
       />
 
-      {/* 8. Unified System Settings Modal (Theme, Logo & Slogan, User Access Control, Database) */}
+      {/* 7. Unified System Settings Modal (Logo & Header Theme, GitHub Updates & Deploy, User Access, Database) */}
       <SystemSettingsModal
         isOpen={isSystemSettingsModalOpen}
         onClose={() => setIsSystemSettingsModalOpen(false)}
@@ -924,6 +998,7 @@ export default function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
         currentUser={currentUser}
+        initialTab={systemSettingsTab}
         onOpenDatabaseManager={() => setIsDatabaseModalOpen(true)}
         onExportData={handleExportData}
         onImportData={handleImportData}

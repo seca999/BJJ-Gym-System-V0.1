@@ -178,11 +178,11 @@ export const BELT_CONFIGS: Record<BeltRank, BeltStyleConfig> = {
   White: {
     name: 'White',
     bgGradient: 'bg-gradient-to-r from-stone-100 via-white to-stone-200',
-    borderColor: 'border-stone-400',
-    textColor: 'text-stone-900 font-extrabold',
-    sleeveBg: 'bg-stone-950',
+    borderColor: 'border-stone-400 dark:border-stone-500 ring-1 ring-stone-900/15 dark:ring-transparent',
+    textColor: 'text-stone-900 font-black',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: null,
   },
 
@@ -192,93 +192,93 @@ export const BELT_CONFIGS: Record<BeltRank, BeltStyleConfig> = {
     bgGradient: 'bg-gradient-to-r from-stone-500 via-stone-400 to-stone-200',
     borderColor: 'border-stone-500',
     textColor: 'text-stone-950 font-black',
-    sleeveBg: 'bg-stone-950',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: 'white',
   },
   Grey: {
     name: 'Grey',
     bgGradient: 'bg-gradient-to-r from-stone-600 via-stone-500 to-stone-600',
     borderColor: 'border-stone-600',
-    textColor: 'text-white font-extrabold',
-    sleeveBg: 'bg-stone-950',
+    textColor: 'belt-text-white font-extrabold',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: null,
   },
   'Grey-Black': {
     name: 'Grey-Black',
     bgGradient: 'bg-gradient-to-r from-stone-600 via-stone-500 to-stone-900',
     borderColor: 'border-stone-600',
-    textColor: 'text-white font-extrabold',
-    sleeveBg: 'bg-stone-950',
+    textColor: 'belt-text-white font-extrabold',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: 'black',
   },
 
-  // IBJJF Youth Yellow Group (Ages 7 - 15)
+  // IBJJF Youth Yellow Group (Ages 7 - 15) - Bright Pure Lemon/Canary Yellow
   'Yellow-White': {
     name: 'Yellow-White',
-    bgGradient: 'bg-gradient-to-r from-amber-400 via-amber-300 to-stone-100',
-    borderColor: 'border-amber-500',
-    textColor: 'text-stone-950 font-black',
-    sleeveBg: 'bg-stone-950',
+    bgGradient: 'bg-gradient-to-r from-yellow-400 via-yellow-300 to-yellow-100',
+    borderColor: 'border-yellow-500',
+    textColor: 'text-yellow-950 font-black',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: 'white',
   },
   Yellow: {
     name: 'Yellow',
-    bgGradient: 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500',
-    borderColor: 'border-amber-600',
-    textColor: 'text-stone-950 font-black',
-    sleeveBg: 'bg-stone-950',
+    bgGradient: 'bg-gradient-to-r from-yellow-400 via-yellow-300 to-yellow-400',
+    borderColor: 'border-yellow-500',
+    textColor: 'text-yellow-950 font-black',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: null,
   },
   'Yellow-Black': {
     name: 'Yellow-Black',
-    bgGradient: 'bg-gradient-to-r from-amber-500 via-amber-400 to-stone-900',
-    borderColor: 'border-amber-600',
-    textColor: 'text-stone-950 font-black',
-    sleeveBg: 'bg-stone-950',
+    bgGradient: 'bg-gradient-to-r from-yellow-400 via-yellow-300 to-stone-900',
+    borderColor: 'border-yellow-500',
+    textColor: 'text-yellow-950 font-black',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: 'black',
   },
 
-  // IBJJF Youth Orange Group (Ages 10 - 15)
+  // IBJJF Youth Orange Group (Ages 10 - 15) - Deep Rich Tangerine/Fire Orange
   'Orange-White': {
     name: 'Orange-White',
-    bgGradient: 'bg-gradient-to-r from-orange-500 via-orange-400 to-stone-100',
-    borderColor: 'border-orange-500',
-    textColor: 'text-stone-950 font-black',
-    sleeveBg: 'bg-stone-950',
+    bgGradient: 'belt-rank-orange-white bg-gradient-to-r from-orange-600 via-orange-500 to-orange-600',
+    borderColor: 'border-orange-700',
+    textColor: 'text-stone-950 font-black drop-shadow-xs',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: 'white',
   },
   Orange: {
     name: 'Orange',
     bgGradient: 'bg-gradient-to-r from-orange-600 via-orange-500 to-orange-600',
-    borderColor: 'border-orange-600',
-    textColor: 'text-white font-extrabold',
-    sleeveBg: 'bg-stone-950',
+    borderColor: 'border-orange-700',
+    textColor: 'belt-text-white font-black drop-shadow-xs',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: null,
   },
   'Orange-Black': {
     name: 'Orange-Black',
     bgGradient: 'bg-gradient-to-r from-orange-600 via-orange-500 to-stone-900',
-    borderColor: 'border-orange-600',
-    textColor: 'text-white font-extrabold',
-    sleeveBg: 'bg-stone-950',
+    borderColor: 'border-orange-700',
+    textColor: 'belt-text-white font-black drop-shadow-xs',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: 'black',
   },
 
@@ -288,29 +288,29 @@ export const BELT_CONFIGS: Record<BeltRank, BeltStyleConfig> = {
     bgGradient: 'bg-gradient-to-r from-emerald-600 via-emerald-500 to-stone-100',
     borderColor: 'border-emerald-600',
     textColor: 'text-stone-950 font-black',
-    sleeveBg: 'bg-stone-950',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: 'white',
   },
   Green: {
     name: 'Green',
     bgGradient: 'bg-gradient-to-r from-emerald-700 via-emerald-600 to-emerald-700',
     borderColor: 'border-emerald-700',
-    textColor: 'text-white font-extrabold',
-    sleeveBg: 'bg-stone-950',
+    textColor: 'belt-text-white font-extrabold',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: null,
   },
   'Green-Black': {
     name: 'Green-Black',
     bgGradient: 'bg-gradient-to-r from-emerald-700 via-emerald-600 to-stone-900',
     borderColor: 'border-emerald-700',
-    textColor: 'text-white font-extrabold',
-    sleeveBg: 'bg-stone-950',
+    textColor: 'belt-text-white font-extrabold',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-stone-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: 'black',
   },
 
@@ -319,40 +319,40 @@ export const BELT_CONFIGS: Record<BeltRank, BeltStyleConfig> = {
     name: 'Blue',
     bgGradient: 'bg-gradient-to-r from-blue-700 via-blue-600 to-blue-700',
     borderColor: 'border-blue-800',
-    textColor: 'text-white font-extrabold',
-    sleeveBg: 'bg-stone-950',
+    textColor: 'belt-text-white font-extrabold',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-black',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: null,
   },
   Purple: {
     name: 'Purple',
     bgGradient: 'bg-gradient-to-r from-purple-800 via-purple-700 to-purple-800',
     borderColor: 'border-purple-900',
-    textColor: 'text-white font-extrabold',
-    sleeveBg: 'bg-stone-950',
+    textColor: 'belt-text-white font-extrabold',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-black',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: null,
   },
   Brown: {
     name: 'Brown',
-    bgGradient: 'bg-gradient-to-r from-amber-950 via-amber-900 to-amber-950',
-    borderColor: 'border-amber-950',
-    textColor: 'text-white font-extrabold',
-    sleeveBg: 'bg-stone-950',
+    bgGradient: 'belt-rank-brown bg-amber-950',
+    borderColor: 'border-amber-900',
+    textColor: 'belt-text-white font-extrabold',
+    sleeveBg: 'belt-rank-sleeve',
     sleeveBorder: 'border-black',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: null,
   },
   Black: {
     name: 'Black',
-    bgGradient: 'bg-gradient-to-r from-stone-950 via-black to-stone-950',
+    bgGradient: 'belt-rank-black bg-stone-950',
     borderColor: 'border-stone-800',
     textColor: 'text-red-400 font-black',
-    sleeveBg: 'bg-gradient-to-r from-red-700 to-red-600',
+    sleeveBg: 'belt-rank-sleeve-red',
     sleeveBorder: 'border-red-800',
-    stripeColor: 'bg-white',
+    stripeColor: 'belt-stripe-earned',
     centerStripe: null,
   },
 };
@@ -587,63 +587,79 @@ export const BeltBadge: React.FC<BeltBadgeProps> = ({
   belt,
   stripes,
   size = 'md',
-  showLabel = true,
+  showLabel = false,
 }) => {
   const config = BELT_CONFIGS[belt] || BELT_CONFIGS.White;
+  const isBlack = belt === 'Black';
 
-  const heightClass = size === 'sm' ? 'h-6 text-xs' : size === 'lg' ? 'h-8 text-sm' : 'h-7 text-xs';
-  const minWidthClass = size === 'sm' ? 'min-w-[138px]' : size === 'lg' ? 'min-w-[210px]' : 'min-w-[170px]';
-  const sleeveWidthClass = size === 'sm' ? 'w-8' : size === 'lg' ? 'w-11' : 'w-9.5';
-  const stripeWidth = size === 'sm' ? 'w-[2px]' : size === 'lg' ? 'w-[3.5px]' : 'w-[2.5px]';
+  // Strictly fixed uniform dimensions so every belt badge is 100% identically sized
+  const widthClass = size === 'sm' ? 'w-[135px]' : size === 'lg' ? 'w-[190px]' : 'w-[155px]';
+  const heightClass = size === 'sm' ? 'h-6 text-[10px]' : size === 'lg' ? 'h-8 text-xs' : 'h-7 text-xs';
+
+  // Explicit pixel dimensions for rank sleeve and strictly fixed stripe slots
+  const sleeveWidth = size === 'sm' ? '38px' : size === 'lg' ? '50px' : '42px';
+  const sleevePadding = size === 'sm' ? 'pl-2 pr-1' : size === 'lg' ? 'pl-3 pr-2' : 'pl-2.5 pr-1.5';
+  const stripeGap = size === 'sm' ? '3px' : size === 'lg' ? '4px' : '3.5px';
+  const stripeWidth = size === 'sm' ? '3px' : size === 'lg' ? '4px' : '3.5px';
 
   return (
-    <div className="inline-flex items-center gap-2 max-w-full">
-      {/* Authentic BJJ Belt visual representation with stitching & rank sleeve */}
+    <div className="inline-flex items-center gap-2 shrink-0">
+      {/* Authentic BJJ Belt visual representation with stitching & rank sleeve - STRICTLY UNIFORM FIXED SIZE */}
       <div
-        className={`relative inline-flex items-center justify-between rounded-md border shadow-sm overflow-hidden select-none shrink-0 ${config.bgGradient} ${config.borderColor} ${heightClass} ${minWidthClass}`}
+        className={`relative inline-flex items-center justify-between rounded-md border shadow-xs overflow-hidden select-none shrink-0 ${config.bgGradient} ${config.borderColor} ${heightClass} ${widthClass}`}
         title={`${belt} Belt, ${stripes} Stripe${stripes === 1 ? '' : 's'}`}
       >
         {/* Belt fabric stitching lines top and bottom */}
-        <div className="absolute inset-x-0 top-[2px] border-t border-black/15 pointer-events-none" />
-        <div className="absolute inset-x-0 bottom-[2px] border-b border-black/15 pointer-events-none" />
+        <div className="absolute inset-x-0 top-[2px] border-t border-black/20 pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-[2px] border-b border-black/20 pointer-events-none" />
 
         {/* Youth center longitudinal stripe for White/Black youth varieties */}
         {config.centerStripe && (
           <div
-            className={`absolute inset-x-0 top-1/2 -translate-y-1/2 h-[28%] ${
-              config.centerStripe === 'white' ? 'bg-white shadow-xs' : 'bg-black shadow-xs'
+            className={`absolute inset-x-0 top-1/2 -translate-y-1/2 h-[30%] ${
+              config.centerStripe === 'white'
+                ? 'bg-white border-y border-stone-900/30 shadow-xs'
+                : 'bg-black border-y border-stone-800 shadow-xs'
             } pointer-events-none opacity-95`}
           />
         )}
 
-        {/* Full Belt Rank Name - Never truncated */}
+        {/* Full Belt Rank Name - Fixed width area, neatly centered or padded */}
         <span
-          className={`relative z-10 px-2 font-black tracking-wider uppercase whitespace-nowrap drop-shadow-xs ${config.textColor}`}
-          style={{ fontSize: size === 'sm' ? '10px' : size === 'lg' ? '12.5px' : '11px' }}
+          className={`relative z-10 px-1.5 font-black tracking-wider uppercase truncate flex-1 min-w-0 drop-shadow-xs text-left ${config.textColor}`}
+          style={{ fontSize: size === 'sm' ? '9px' : size === 'lg' ? '12px' : '10px' }}
         >
           {belt}
         </span>
 
-        {/* Rank sleeve bar with stripe positions */}
+        {/* Rank sleeve bar with stripe positions - Fixed alignment from edge so every stripe is placed at the exact same coordinate with strictly equal spacing */}
         <div
-          className={`relative z-10 h-full flex items-center justify-evenly px-1 border-l shrink-0 ${config.sleeveBg} ${config.sleeveBorder} ${sleeveWidthClass}`}
+          className={`relative z-10 h-full flex items-center justify-start border-l shrink-0 ${sleevePadding} ${
+            isBlack ? 'belt-rank-sleeve-red' : 'belt-rank-sleeve'
+          }`}
+          style={{
+            backgroundColor: isBlack ? '#dc2626' : '#121212',
+            borderColor: isBlack ? '#991b1b' : '#292524',
+            width: sleeveWidth,
+            gap: stripeGap,
+          }}
         >
-          {Array.from({ length: 4 }).map((_, index) => {
-            const hasStripe = index < stripes;
-            return (
-              <div
-                key={index}
-                className={`h-[78%] rounded-[0.5px] transition-colors shadow-xs ${stripeWidth} ${
-                  hasStripe ? `${config.stripeColor} opacity-100` : 'bg-black/20 opacity-30'
-                }`}
-              />
-            );
-          })}
+          {/* Only render actual earned stripes: strictly fixed equal gap and identical thickness */}
+          {Array.from({ length: stripes }).map((_, index) => (
+            <div
+              key={index}
+              className="h-[75%] rounded-[1px] transition-colors belt-stripe-earned shrink-0"
+              style={{
+                width: stripeWidth,
+                backgroundColor: '#ffffff',
+              }}
+            />
+          ))}
         </div>
       </div>
 
       {showLabel && (
-        <span className="text-xs font-semibold text-stone-300 dark:text-stone-300 whitespace-nowrap">
+        <span className="text-xs font-bold text-stone-700 dark:text-stone-300 whitespace-nowrap">
           {stripes > 0 ? `${stripes} stripe${stripes > 1 ? 's' : ''}` : 'No stripes'}
         </span>
       )}

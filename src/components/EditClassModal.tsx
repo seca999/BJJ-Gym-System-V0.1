@@ -54,6 +54,7 @@ const DAYS_OF_WEEK = [
 const CLASS_TYPES = [
   'Gi',
   'No-Gi',
+  'VIP',
   'Wrestling',
   'Morning',
   'Fundamentals',
@@ -79,12 +80,14 @@ export const EditClassModal: React.FC<EditClassModalProps> = ({
   // Search & Filter in list view
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | ClassCategory>('ALL');
+  const [vipFilter, setVipFilter] = useState<'ALL' | 'VIP' | 'REGULAR'>('ALL');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Form Fields
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<ClassCategory>('Adults');
   const [type, setType] = useState<string>('Gi');
+  const [isVip, setIsVip] = useState<boolean>(false);
   
   // Head Coach state
   const [headCoachId, setHeadCoachId] = useState<string>('');
@@ -117,6 +120,7 @@ export const EditClassModal: React.FC<EditClassModalProps> = ({
       setTitle(session.title);
       setCategory(session.category);
       setType(session.type);
+      setIsVip(Boolean(session.isVip || session.type === 'VIP'));
       
       const defaultHead = coaches.find(c => c.id === session.headCoachId && !c.isDeleted) || coaches.find(c => !c.isDeleted);
       setHeadCoachId(session.headCoachId || defaultHead?.id || '');
@@ -138,6 +142,8 @@ export const EditClassModal: React.FC<EditClassModalProps> = ({
       // Default for brand new class
       setTitle('');
       setCategory('Adults');
+      setType('Gi');
+      setIsVip(false);
       setType('Gi');
       
       const activeCoaches = coaches.filter(c => !c.isDeleted);
@@ -294,7 +300,8 @@ export const EditClassModal: React.FC<EditClassModalProps> = ({
       id: editingSession?.id || `cls-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       title: title.trim(),
       category,
-      type,
+      type: isVip ? 'VIP' : type,
+      isVip: Boolean(isVip),
       coach: primaryCoachName,
       headCoachId: headCoachId || undefined,
       headCoachName: headCoachName.trim() || undefined,
@@ -324,6 +331,7 @@ export const EditClassModal: React.FC<EditClassModalProps> = ({
   // Helper for badge color by class type
   const getClassTypeColor = (tStr: string) => {
     const t = tStr.toLowerCase();
+    if (t.includes('vip')) return 'bg-amber-500 text-stone-950 font-black border-amber-300 shadow-xs';
     if (t.includes('wrestl')) return 'bg-amber-950 text-amber-300 border-amber-800/90';
     if (t.includes('morning')) return 'bg-sky-950 text-sky-300 border-sky-800/90';
     if (t.includes('no-gi')) return 'bg-purple-950 text-purple-300 border-purple-800/90';
@@ -334,6 +342,8 @@ export const EditClassModal: React.FC<EditClassModalProps> = ({
 
   // Filter classes for list view
   const filteredClasses = classes.filter((c) => {
+    if (vipFilter === 'VIP' && !c.isVip && c.type !== 'VIP') return false;
+    if (vipFilter === 'REGULAR' && (c.isVip || c.type === 'VIP')) return false;
     if (categoryFilter !== 'ALL' && c.category !== categoryFilter) return false;
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -349,6 +359,7 @@ export const EditClassModal: React.FC<EditClassModalProps> = ({
   const adultsCount = classes.filter((c) => c.category === 'Adults').length;
   const kidsCount = classes.filter((c) => c.category === 'Kids').length;
   const teensCount = classes.filter((c) => c.category === 'Teens').length;
+  const vipCount = classes.filter((c) => c.isVip || c.type === 'VIP').length;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
@@ -489,6 +500,19 @@ export const EditClassModal: React.FC<EditClassModalProps> = ({
                 >
                   Teens ({teensCount})
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setVipFilter((prev) => (prev === 'VIP' ? 'ALL' : 'VIP'))}
+                  className={`px-2.5 py-1 rounded-lg font-black transition-all flex items-center gap-1 cursor-pointer ${
+                    vipFilter === 'VIP'
+                      ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-stone-950 border border-amber-300 shadow-xs'
+                      : 'text-amber-400 hover:text-amber-300 hover:bg-stone-850'
+                  }`}
+                  title="Filter only VIP 1-on-1 private classes"
+                >
+                  <Sparkles className="w-3 h-3 fill-current" />
+                  <span>VIP ({vipCount})</span>
+                </button>
               </div>
             </div>
 
@@ -547,6 +571,12 @@ export const EditClassModal: React.FC<EditClassModalProps> = ({
                               >
                                 {cls.category}
                               </span>
+                              {(cls.isVip || cls.type === 'VIP') && (
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 text-stone-950 border border-amber-300 shadow-xs inline-flex items-center gap-1">
+                                  <Sparkles className="w-3 h-3 fill-stone-950" />
+                                  VIP 121
+                                </span>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-1">
@@ -732,6 +762,52 @@ export const EditClassModal: React.FC<EditClassModalProps> = ({
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* VIP / Private 1-on-1 Class Toggle */}
+              <div className={`p-3.5 rounded-xl border transition-all flex items-center justify-between gap-3 ${
+                isVip
+                  ? 'bg-amber-950/40 border-amber-500/70 text-amber-200 shadow-md ring-1 ring-amber-500/30'
+                  : 'bg-stone-950/80 border-stone-800 text-stone-300'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                    isVip
+                      ? 'bg-amber-500 text-stone-950 border-amber-300 shadow-xs'
+                      : 'bg-stone-850 text-stone-400 border-stone-700'
+                  }`}>
+                    <Sparkles className={`w-4 h-4 ${isVip ? 'fill-stone-950' : ''}`} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs sm:text-sm font-black text-white">Set as VIP / Private 121 Class</span>
+                      {isVip && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-stone-950 uppercase tracking-wider">
+                          VIP Exclusive
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-stone-400 mt-0.5">
+                      When enabled, this class <strong>only appears in the VIP Section</strong> in Mat Check-In and is hidden from standard Group Classes.
+                    </p>
+                  </div>
+                </div>
+
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={isVip}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setIsVip(checked);
+                      if (checked && type !== 'VIP') {
+                        setType('VIP');
+                      }
+                    }}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-stone-800 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                </label>
               </div>
 
               {/* Age & Belt restriction banner */}

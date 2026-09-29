@@ -26,13 +26,19 @@ import {
   Filter,
   Flame,
   Shield,
-  BookOpen
+  BookOpen,
+  MoveVertical,
+  ArrowDown,
+  Star,
+  Award,
+  Zap,
+  Smile
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
+import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { EditClassModal } from './EditClassModal';
 import { MouseTimeRangePicker } from './MouseTimeRangePicker';
-import { ACADEMY_TIMETABLE_PRESETS, parseTimeToMinutes, parseTimeRange } from '../utils/timeUtils';
+import { ACADEMY_TIMETABLE_PRESETS, parseTimeToMinutes, parseTimeRange, addMinutesToTime, formatMinutesToTime, parseSlotStartMinutes, parseSlotEndMinutes } from '../utils/timeUtils';
 import {
   TimetableConfig,
   TimetableCell,
@@ -44,7 +50,7 @@ import {
   ClassSession,
   Coach
 } from '../types';
-import { DEFAULT_TIMETABLE_CONFIG } from '../data/timetableData';
+import { DEFAULT_TIMETABLE_CONFIG, FIXED_6AM_10PM_SLOTS } from '../data/timetableData';
 
 interface ScheduleBoardViewProps {
   config: TimetableConfig;
@@ -121,7 +127,6 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
   const [isExportingPng, setIsExportingPng] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Reference to printable / exportable grid container
   const gridContainerRef = useRef<HTMLDivElement>(null);
@@ -153,9 +158,344 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
     return config.mats.find((m) => m.id === matId) || config.mats[0];
   };
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  // Helper to find a cell that starts at this slotIdx on this day
+  const getStartingCell = (slotIdx: number, day: TimetableDay): TimetableCell | undefined => {
+    const slot = config.slots[slotIdx];
+    if (!slot) return undefined;
+    const slotMin = parseSlotStartMinutes(slot.timeRange);
+    const isFirstSlot = slotIdx === 0;
+    const isLastSlot = slotIdx === config.slots.length - 1;
+
+    return config.cells.find((c) => {
+      if (c.day !== day || !c.title.trim()) return false;
+      if (c.timeRange && c.timeRange.trim().length > 0) {
+        const sMin = parseSlotStartMinutes(c.timeRange);
+        if (isFirstSlot && sMin < slotMin + 30) return true;
+        if (isLastSlot && sMin >= slotMin) return true;
+        return sMin >= slotMin && sMin < slotMin + 30;
+      }
+      return c.slotId === slot.id;
+    });
+  };
+
+  // Helper to check how many 30-min slots a cell spans
+  const getCellSpanSlots = (cell: TimetableCell, fallbackSlotRange: string): number => {
+    const slotStartMins = parseSlotStartMinutes(fallbackSlotRange);
+    if (cell.timeRange && cell.timeRange.trim().length > 0) {
+      const sMin = parseSlotStartMinutes(cell.timeRange);
+      const eMin = parseSlotEndMinutes(cell.timeRange);
+      const startMins = Math.max(slotStartMins, sMin);
+      return Math.max(1, Math.ceil((eMin - startMins) / 30));
+    }
+    return cell.spanSlots || 1;
+  };
+
+  // Helper to check if a (day, slotIdx) is covered by a multi-slot cell that started at an earlier slot
+  const isCoveredByEarlierSlot = (day: TimetableDay, slotIdx: number): boolean => {
+    for (let i = 0; i < slotIdx; i++) {
+      const earlierCell = getStartingCell(i, day);
+      if (earlierCell) {
+        const span = getCellSpanSlots(earlierCell, config.slots[i]?.timeRange || '');
+        if (i + span > slotIdx) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  // Helper to get coach name for a cell
+  const getCellCoachName = (cell: TimetableCell): string => {
+    if (cell.instructor && cell.instructor.trim().length > 0) {
+      return cell.instructor.replace(/\s*\(Head Coach\)/i, '').trim();
+    }
+    if (cell.subtitle) {
+      const match = cell.subtitle.match(/\(([^)]+)\)/);
+      if (match && match[1]) return match[1].trim();
+    }
+    const matchingClass = classes.find(
+      (c) => c.title.trim().toLowerCase() === cell.title.trim().toLowerCase()
+    );
+    if (matchingClass) {
+      return (
+        matchingClass.headCoachName ||
+        matchingClass.coach.replace(/\s*\(Head Coach\)/i, '') ||
+        gymSettings.defaultCoach ||
+        'Coach'
+      );
+    }
+    return gymSettings.defaultCoach || 'Coach';
+  };
+
+  // Silent no-op helper (removes noisy popup toasts from the UI)
+  const showToast = (_msg?: string) => {};
+
+  // State for dragging class (top resize, bottom resize, or moving entire class up/down in 5-min steps)
+  const [activeDragOp, setActiveDragOp] = useState<{
+    cellId: string;
+    day: TimetableDay;
+    slotIdx: number;
+    mode: 'resize-start' | 'resize-end' | 'move';
+    startY: number;
+    initialStartMins: number;
+    initialEndMins: number;
+    currentStartMins: number;
+    currentEndMins: number;
+    cellTitle: string;
+  } | null>(null);
+
+  const isDraggingRef = useRef(false);
+  const dragMovedRef = useRef(false);
+  const dragEndTimeRef = useRef(0);
+
+  // Mouse move and up listeners for 5-minute top/bottom stretching & class moving
+  React.useEffect(() => {
+    if (!activeDragOp) return;
+
+    const firstSlotStartMins = parseSlotStartMinutes(config.slots[0]?.timeRange || '6:00 AM');
+    const lastSlot = config.slots[config.slots.length - 1];
+    const lastSlotEndMins = parseSlotEndMinutes(lastSlot?.timeRange || '10:00 PM');
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaY = e.clientY - activeDragOp.startY;
+      if (Math.abs(deltaY) > 3) {
+        dragMovedRef.current = true;
+      }
+      // 58px per 30 minutes = ~1.933px per minute. Round to nearest 5-minute increment.
+      const pxPerMinute = 58 / 30;
+      const rawDeltaMins = deltaY / pxPerMinute;
+      const stepMins = Math.round(rawDeltaMins / 5) * 5;
+
+      if (activeDragOp.mode === 'resize-start') {
+        // Dragging top handle: moving UP (negative deltaY) makes start time earlier, moving DOWN makes start time later
+        let newStart = activeDragOp.initialStartMins + stepMins;
+        newStart = Math.max(firstSlotStartMins, Math.min(activeDragOp.initialEndMins - 15, newStart));
+        newStart = Math.round(newStart / 5) * 5;
+
+        setActiveDragOp((prev) =>
+          prev ? { ...prev, currentStartMins: newStart } : prev
+        );
+      } else if (activeDragOp.mode === 'resize-end') {
+        // Dragging bottom handle: moving DOWN (positive deltaY) makes end time later, moving UP makes end time earlier
+        let newEnd = activeDragOp.initialEndMins + stepMins;
+        newEnd = Math.min(lastSlotEndMins, Math.max(activeDragOp.initialStartMins + 15, newEnd));
+        newEnd = Math.round(newEnd / 5) * 5;
+
+        setActiveDragOp((prev) =>
+          prev ? { ...prev, currentEndMins: newEnd } : prev
+        );
+      } else if (activeDragOp.mode === 'move') {
+        // Dragging entire class card: shift both start and end time together
+        const duration = activeDragOp.initialEndMins - activeDragOp.initialStartMins;
+        let newStart = activeDragOp.initialStartMins + stepMins;
+        newStart = Math.max(firstSlotStartMins, Math.min(lastSlotEndMins - duration, newStart));
+        newStart = Math.round(newStart / 5) * 5;
+        const newEnd = newStart + duration;
+
+        setActiveDragOp((prev) =>
+          prev ? { ...prev, currentStartMins: newStart, currentEndMins: newEnd } : prev
+        );
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (!activeDragOp) return;
+      const { cellId, currentStartMins, currentEndMins } = activeDragOp;
+      const hasChanged =
+        currentStartMins !== activeDragOp.initialStartMins ||
+        currentEndMins !== activeDragOp.initialEndMins;
+
+      dragEndTimeRef.current = Date.now();
+      isDraggingRef.current = false;
+
+      if (hasChanged && dragMovedRef.current) {
+        const newStart = formatMinutesToTime(currentStartMins);
+        const newEnd = formatMinutesToTime(currentEndMins);
+        const newTimeRange = `${newStart} - ${newEnd}`;
+
+        let targetSlot = config.slots.find((s) => {
+          const sMin = parseSlotStartMinutes(s.timeRange);
+          return currentStartMins >= sMin && currentStartMins < sMin + 30;
+        });
+
+        if (!targetSlot) {
+          targetSlot = currentStartMins <= firstSlotStartMins
+            ? config.slots[0]
+            : config.slots[config.slots.length - 1];
+        }
+
+        const targetSlotStartMins = parseSlotStartMinutes(targetSlot.timeRange);
+        const spanSlots = Math.max(1, Math.ceil((currentEndMins - targetSlotStartMins) / 30));
+
+        const updatedCells = config.cells.map((c) => {
+          if (c.id === cellId) {
+            const baseSub = c.subtitle ? c.subtitle.split('\n')[0] : '';
+            return {
+              ...c,
+              slotId: targetSlot.id,
+              timeRange: newTimeRange,
+              spanSlots,
+              subtitle: baseSub ? `${baseSub}\n${newTimeRange}` : newTimeRange,
+            };
+          }
+          return c;
+        });
+
+        onUpdateConfig({
+          ...config,
+          cells: updatedCells,
+        });
+      }
+
+      setActiveDragOp(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [activeDragOp, config, onUpdateConfig]);
+
+  // Start drag operation from Top handle, Bottom handle, or Card body
+  const handleStartDrag = (
+    e: React.MouseEvent,
+    cell: TimetableCell,
+    slotIdx: number,
+    day: TimetableDay,
+    mode: 'resize-start' | 'resize-end' | 'move'
+  ) => {
+    if (e.button !== 0) return; // only left click
+    e.preventDefault();
+    e.stopPropagation();
+
+    isDraggingRef.current = true;
+    dragMovedRef.current = false;
+
+    const currentRange = cell.timeRange || config.slots[slotIdx]?.timeRange || '4:30 - 5:30 PM';
+    const { start, end } = parseTimeRange(currentRange);
+    const startMins = parseTimeToMinutes(start);
+    const endMins = parseTimeToMinutes(end);
+
+    setActiveDragOp({
+      cellId: cell.id,
+      day,
+      slotIdx,
+      mode,
+      startY: e.clientY,
+      initialStartMins: startMins,
+      initialEndMins: endMins,
+      currentStartMins: startMins,
+      currentEndMins: endMins,
+      cellTitle: cell.title,
+    });
+  };
+
+  // Quick 5-minute incremental adjustments on Start (top) or End (bottom)
+  const handleAdjustClassTime = (
+    cell: TimetableCell,
+    slotIdx: number,
+    edge: 'start' | 'end',
+    deltaMinutes: number
+  ) => {
+    const currentRange = cell.timeRange || config.slots[slotIdx]?.timeRange || '4:30 - 5:30 PM';
+    const { start, end } = parseTimeRange(currentRange);
+    let startMins = parseTimeToMinutes(start);
+    let endMins = parseTimeToMinutes(end);
+
+    if (edge === 'start') {
+      // -5 mins = start earlier, +5 mins = start later
+      startMins = Math.max(0, startMins + deltaMinutes);
+      if (startMins >= endMins - 15) {
+        startMins = endMins - 15; // minimum 15-minute class
+      }
+    } else {
+      // +5 mins = end later, -5 mins = end earlier
+      endMins = Math.min(1435, endMins + deltaMinutes);
+      if (endMins <= startMins + 15) {
+        endMins = startMins + 15; // minimum 15-minute class
+      }
+    }
+
+    const newStart = formatMinutesToTime(startMins);
+    const newEnd = formatMinutesToTime(endMins);
+    const newTimeRange = `${newStart} - ${newEnd}`;
+    const targetSlot = config.slots.find((s) => {
+      const sMin = parseSlotStartMinutes(s.timeRange);
+      return startMins >= sMin && startMins < sMin + 30;
+    }) || config.slots[0];
+
+    const targetSlotStartMins = parseSlotStartMinutes(targetSlot.timeRange);
+    const spanSlots = Math.max(1, Math.ceil((endMins - targetSlotStartMins) / 30));
+
+    const updatedCells = config.cells.map((c) => {
+      if (c.id === cell.id) {
+        const baseSub = c.subtitle ? c.subtitle.split('\n')[0] : '';
+        return {
+          ...c,
+          slotId: targetSlot.id,
+          timeRange: newTimeRange,
+          spanSlots,
+          subtitle: baseSub ? `${baseSub}\n${newTimeRange}` : newTimeRange,
+        };
+      }
+      return c;
+    });
+
+    onUpdateConfig({ ...config, cells: updatedCells });
+  };
+
+  // Reset stretched class back to standard 1-hour slot
+  const handleResetStretch = (cell: TimetableCell, slotIdx: number) => {
+    const slot = config.slots[slotIdx];
+    const defaultRange = slot?.timeRange || '7:00 - 8:00 AM';
+    const updatedCells = config.cells.map((c) => {
+      if (c.id === cell.id) {
+        const baseSub = c.subtitle ? c.subtitle.split('\n')[0] : '';
+        return {
+          ...c,
+          timeRange: defaultRange,
+          spanSlots: 1,
+          subtitle: baseSub ? `${baseSub}\n${defaultRange}` : defaultRange,
+        };
+      }
+      return c;
+    });
+
+    onUpdateConfig({ ...config, cells: updatedCells });
+  };
+
+  // Enforce fixed 6:00 AM - 10:00 PM (16 fixed slots)
+  const handleEnforceFixed6to10 = () => {
+    const remapped = config.cells.map((cell) => {
+      const existingSlot = config.slots.find((s) => s.id === cell.slotId);
+      const timeToExamine = cell.timeRange || cell.subtitle || existingSlot?.timeRange || '12:00';
+      const minutes = parseSlotStartMinutes(timeToExamine);
+
+      let targetSlot = FIXED_6AM_10PM_SLOTS.find((s) => {
+        const slotMin = parseSlotStartMinutes(s.timeRange);
+        return minutes >= slotMin && minutes < slotMin + 30;
+      });
+
+      if (!targetSlot) {
+        targetSlot = minutes < 360 ? FIXED_6AM_10PM_SLOTS[0] : FIXED_6AM_10PM_SLOTS[FIXED_6AM_10PM_SLOTS.length - 1];
+      }
+
+      return {
+        ...cell,
+        slotId: targetSlot.id,
+        timeRange: cell.timeRange || existingSlot?.timeRange || targetSlot.timeRange,
+      };
+    });
+
+    onUpdateConfig({
+      ...config,
+      slots: FIXED_6AM_10PM_SLOTS,
+      cells: remapped,
+    });
+    showToast('Enforced fixed 6:00 AM – 10:00 PM time slots');
   };
 
   // Helper to detect if there is a midday unoccupied blank gap between slots (e.g. 9 AM - 4 PM)
@@ -203,11 +543,18 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
     instructor?: string;
     category?: ClassCategory;
     matId?: string;
+    durationMinutes?: number;
   }) => {
     if (!assignDropdownCell) return;
     const { slotId, day } = assignDropdownCell;
     const slot = getSlot(slotId);
     const targetMatId = assigned.matId || slot?.matId || config.mats[0]?.id || 'mat-1';
+
+    const startMins = parseSlotStartMinutes(slot?.timeRange || '6:00 AM');
+    const duration = assigned.durationMinutes || 60;
+    const endMins = startMins + duration;
+    const computedTimeRange = `${formatMinutesToTime(startMins)} - ${formatMinutesToTime(endMins)}`;
+    const spanSlots = Math.max(1, Math.ceil(duration / 30));
 
     let newCells: TimetableCell[] = [];
     const existing = getCell(slotId, day);
@@ -222,6 +569,8 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
               instructor: assigned.instructor || c.instructor || gymSettings.defaultCoach,
               matId: targetMatId,
               category: assigned.category || 'Adults',
+              timeRange: computedTimeRange,
+              spanSlots,
             }
           : c
       );
@@ -235,6 +584,8 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
         instructor: assigned.instructor || gymSettings.defaultCoach || 'Professor Lucas Silva',
         matId: targetMatId,
         category: assigned.category || 'Adults',
+        timeRange: computedTimeRange,
+        spanSlots,
       };
       newCells = [...config.cells, newCell];
     }
@@ -337,22 +688,6 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
     showToast('Time slot removed');
   };
 
-  // Move Time Slot Row Up or Down
-  const handleMoveSlot = (index: number, direction: 'up' | 'down') => {
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= config.slots.length) return;
-
-    const newSlots = [...config.slots];
-    const temp = newSlots[index];
-    newSlots[index] = newSlots[targetIndex];
-    newSlots[targetIndex] = temp;
-
-    onUpdateConfig({
-      ...config,
-      slots: newSlots,
-    });
-  };
-
   // Apply Timetable Preset Layout (e.g. Morning & Evening Split, Gym Closed 9am - 4pm)
   const handleApplyTimetablePreset = (presetKey: string) => {
     const preset = ACADEMY_TIMETABLE_PRESETS.find((p) => p.id === presetKey);
@@ -437,15 +772,18 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
 
     try {
       const element = gridContainerRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 2, // 2x high resolution
-        useCORS: true,
+      const dataUrl = await toPng(element, {
+        quality: 0.98,
+        pixelRatio: 2,
         backgroundColor: theme === 'light' ? '#ffffff' : '#0c0a09',
-        logging: false,
-        ignoreElements: (el) => el.getAttribute('data-export-ignore') === 'true',
+        filter: (node) => {
+          if (node instanceof HTMLElement && node.getAttribute('data-export-ignore') === 'true') {
+            return false;
+          }
+          return true;
+        },
       });
 
-      const dataUrl = canvas.toDataURL('image/png');
       const downloadLink = document.createElement('a');
       const dateStr = new Date().toISOString().split('T')[0];
       downloadLink.download = `matboard-${selectedDayView.toLowerCase()}-${dateStr}.png`;
@@ -453,8 +791,6 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
       document.body.appendChild(downloadLink);
       downloadLink.click();
       document.body.removeChild(downloadLink);
-
-      showToast('Matboard successfully extracted as PNG!');
     } catch (err) {
       console.error('Failed to export PNG:', err);
       alert('Could not export PNG image. Please try again.');
@@ -470,17 +806,26 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
 
     try {
       const element = gridContainerRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 2, // 2x high-resolution capture
-        useCORS: true,
+      const dataUrl = await toPng(element, {
+        quality: 0.98,
+        pixelRatio: 2,
         backgroundColor: theme === 'light' ? '#ffffff' : '#0c0a09',
-        logging: false,
-        ignoreElements: (el) => el.getAttribute('data-export-ignore') === 'true',
+        filter: (node) => {
+          if (node instanceof HTMLElement && node.getAttribute('data-export-ignore') === 'true') {
+            return false;
+          }
+          return true;
+        },
       });
 
-      const imgData = canvas.toDataURL('image/png');
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise<void>((resolve) => {
+        img.onload = () => resolve();
+      });
+
+      const imgWidth = img.naturalWidth || img.width;
+      const imgHeight = img.naturalHeight || img.height;
 
       const isLandscape = imgWidth >= imgHeight;
       const pdf = new jsPDF({
@@ -507,12 +852,10 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
       const xOffset = margin + (availableWidth - renderWidth) / 2;
       const yOffset = margin + (availableHeight - renderHeight) / 2;
 
-      pdf.addImage(imgData, 'PNG', xOffset, yOffset, renderWidth, renderHeight);
+      pdf.addImage(dataUrl, 'PNG', xOffset, yOffset, renderWidth, renderHeight);
 
       const dateStr = new Date().toISOString().split('T')[0];
       pdf.save(`matboard-${selectedDayView.toLowerCase()}-${dateStr}.pdf`);
-
-      showToast('Matboard successfully extracted as PDF!');
     } catch (err) {
       console.error('Failed to export PDF:', err);
       alert('Could not export PDF document. Please try again.');
@@ -539,7 +882,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
       case 'Adults':
       default:
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-stone-900/90 text-amber-300 border border-amber-600/60 shadow-xs">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-stone-900 text-stone-200 border border-stone-700 shadow-xs">
             Adults
           </span>
         );
@@ -572,21 +915,13 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-stone-900 text-white px-4 py-3 rounded-xl border border-amber-500/50 shadow-2xl flex items-center gap-2.5 animate-bounce">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-          <span className="text-sm font-semibold">{toastMessage}</span>
-        </div>
-      )}
-
       {/* Top Controls Bar: Day Tabs, Export Options & Actions */}
       <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col gap-4">
         {/* Row 1: Header Title & Export Tools */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <div className="w-9 h-9 rounded-xl bg-red-600/10 border border-red-500/30 flex items-center justify-center text-red-500">
                 <CalendarDays className="w-5 h-5" />
               </div>
               <div>
@@ -602,15 +937,6 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
 
           {/* Export Actions & Row Management */}
           <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
-            <button
-              onClick={() => setIsPresetsModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-stone-800 hover:bg-stone-750 text-amber-300 border border-stone-700 hover:border-amber-500/40 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
-              title="Quick timetable layouts: Morning & Evening split, closed midday, or custom hours"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Presets & Layout</span>
-            </button>
-
             {/* Consolidated Export Dropdown */}
             <div className="relative" ref={exportMenuRef}>
               <button
@@ -621,7 +947,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                 title="Export schedule as PNG image or printable PDF"
               >
                 {isExportingPng || isExportingPdf ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-red-400" />
                 ) : (
                   <FileDown className="w-3.5 h-3.5 text-stone-400" />
                 )}
@@ -639,7 +965,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                     }}
                     className="w-full px-3 py-2 text-left text-xs font-semibold text-stone-200 hover:text-white hover:bg-stone-800 flex items-center gap-2 transition-colors cursor-pointer"
                   >
-                    <ImageIcon className="w-4 h-4 text-amber-400" />
+                    <ImageIcon className="w-4 h-4 text-red-400" />
                     <span>Download PNG</span>
                   </button>
                   <button
@@ -678,7 +1004,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                 onClick={handleToggleFriday}
                 className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-colors border cursor-pointer ${
                   config.days.includes('FRI')
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    ? 'bg-red-950/40 text-red-300 border-red-500/40'
                     : 'bg-stone-800 text-stone-400 border-stone-700 hover:text-stone-200'
                 }`}
                 title="Toggle Friday column on/off"
@@ -687,7 +1013,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
               </button>
               <button
                 onClick={handleResetToDefaults}
-                className="p-2 text-stone-400 hover:text-amber-400 hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
+                className="p-2 text-stone-400 hover:text-red-400 hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
                 title="Reset to default academy mat schedule"
               >
                 <RotateCcw className="w-4 h-4" />
@@ -699,9 +1025,9 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
         {/* Row 2: Weekly Grid Summary Bar */}
         <div className="border-t border-stone-800 pt-3 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <div className="px-3.5 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-black text-amber-300">
+            <div className="px-3.5 py-1.5 rounded-xl bg-stone-950 border border-stone-800 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-red-500" />
+              <span className="text-xs font-black text-stone-200">
                 Weekly Matboard Grid ({config.cells.filter(c => c.title.trim()).length} Active Sessions)
               </span>
             </div>
@@ -712,238 +1038,309 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
         </div>
       </div>
 
-      {/* FULL MULTI-DAY TIME GRID (All Days Overview) */}
+      {/* FULL MULTI-DAY TIME GRID (30-Minute Blocks with Multi-Slot Spanning) */}
       <div className="overflow-x-auto rounded-2xl shadow-2xl border border-stone-800">
         <div
           ref={gridContainerRef}
           className="min-w-[980px] bg-stone-900 select-none"
         >
-          {/* Table Grid: Column Header */}
-          <div
-            className="grid border-b border-stone-800 text-center"
-            style={{
-              gridTemplateColumns: `140px repeat(${config.days.length}, minmax(130px, 1fr))`,
-            }}
-          >
-            {/* TOP-LEFT CORNER BOX: TIME / DAY */}
-            <div className="p-3.5 bg-black flex items-center justify-center gap-1.5 border-r border-stone-800 text-white">
-              <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-              <span className="font-extrabold text-xs sm:text-sm tracking-wider text-white">
-                TIME
-              </span>
-              <span className="text-stone-500 font-bold text-xs">/</span>
-              <span className="text-amber-300 font-black text-xs sm:text-sm tracking-wider">
-                DAY
-              </span>
-            </div>
+          <table className="w-full border-collapse table-fixed">
+            <thead>
+              <tr className="border-b border-stone-800 text-center">
+                {/* TOP-LEFT CORNER BOX: TIME / DAY */}
+                <th className={`w-[140px] p-3.5 border-r text-center transition-colors ${
+                  theme === 'light'
+                    ? 'bg-stone-200 border-stone-300 text-stone-900 font-black'
+                    : 'bg-stone-950 border-stone-800 text-white'
+                }`}>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <Clock className={`w-4 h-4 shrink-0 ${theme === 'light' ? 'text-stone-700' : 'text-stone-400'}`} />
+                    <span className={`font-extrabold text-xs sm:text-sm tracking-wider ${
+                      theme === 'light' ? 'text-stone-900' : 'text-white'
+                    }`}>
+                      TIME
+                    </span>
+                    <span className={theme === 'light' ? 'text-stone-500 font-bold text-xs' : 'text-stone-500 font-bold text-xs'}>/</span>
+                    <span className={`font-black text-xs sm:text-sm tracking-wider ${
+                      theme === 'light' ? 'text-stone-900' : 'text-white'
+                    }`}>
+                      DAY
+                    </span>
+                  </div>
+                </th>
 
-            {/* Day Column Headers */}
-            {config.days.map((day) => (
-              <div
-                key={day}
-                className="py-3 px-2 bg-stone-900 border-r border-stone-800 text-center"
-              >
-                <div className="flex flex-col items-center justify-center">
-                  <span className="text-sm font-black text-white tracking-widest">
-                    {day}
-                  </span>
-                  <span className="text-[10px] text-stone-400 font-semibold tracking-wide">
-                    {DAY_LABELS[day].full}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Time Slot Rows */}
-          <div className="divide-y divide-stone-800/80">
-            {config.slots.map((slot, slotIdx) => {
-              const rowMat = getMat(slot.matId);
-              const prevSlot = slotIdx > 0 ? config.slots[slotIdx - 1] : undefined;
-              const middayGap = getMiddayGap(prevSlot?.timeRange, slot.timeRange);
-
-              return (
-                <React.Fragment key={slot.id}>
-                  {/* Midday Blank Gap Row */}
-                  {middayGap && (
-                    <div
-                      className="bg-stone-950 border-y border-dashed border-stone-850 py-2.5 px-4 flex items-center justify-between"
-                      style={{
-                        gridColumn: `1 / span ${config.days.length + 1}`,
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5 text-amber-500" />
-                        <span className="text-xs font-bold text-stone-400">
-                          {middayGap.gapLabel}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenAddSlot('12:00 PM - 01:15 PM')}
-                        className="text-[11px] font-bold text-amber-400 hover:text-amber-300 hover:underline cursor-pointer"
-                        data-export-ignore="true"
-                      >
-                        + Insert Midday Slot
-                      </button>
-                    </div>
-                  )}
-
-                  <div
-                    className="grid"
-                    style={{
-                      gridTemplateColumns: `140px repeat(${config.days.length}, minmax(130px, 1fr))`,
-                    }}
+                {/* Day Column Headers */}
+                {config.days.map((day) => (
+                  <th
+                    key={day}
+                    className="py-3 px-2 bg-stone-900 border-r border-stone-800 text-center font-normal"
                   >
-                    {/* Time Slot Column Header */}
-                    <div
-                      onClick={() => handleOpenEditSlot(slot)}
-                      className="p-3 bg-stone-900/95 border-r border-stone-800 flex flex-col justify-center items-center text-center cursor-pointer hover:bg-stone-850 transition-colors relative group"
-                      title="Click to edit time range or change assigned mat row"
+                    <div className="flex flex-col items-center justify-center">
+                      <span className="text-sm font-black text-white tracking-widest">
+                        {day}
+                      </span>
+                      <span className="text-[10px] text-stone-400 font-semibold tracking-wide">
+                        {DAY_LABELS[day].full}
+                      </span>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-stone-800/80">
+              {config.slots.map((slot, slotIdx) => {
+                return (
+                  <tr key={slot.id} className="min-h-[58px]">
+                    {/* Time Slot Column Header (Clean, Pure & Static Time) */}
+                    <td
+                      className="w-[140px] px-3 py-2 bg-stone-950 border-r border-stone-800 text-center align-middle select-none"
                     >
-                      <span className="font-mono-digits font-extrabold text-xs text-white leading-tight">
+                      <span className="font-mono-digits font-extrabold text-xs text-stone-200 tracking-tight">
                         {slot.timeRange}
                       </span>
-                      {rowMat && (
-                        <span
-                          className="mt-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider text-white shadow-xs"
-                          style={{ backgroundColor: rowMat.bgColor }}
-                        >
-                          {rowMat.name}
-                        </span>
-                      )}
+                    </td>
 
-                      {/* Quick slot reorder/edit actions on hover */}
-                      <div
-                        className="absolute right-1 top-1 bottom-1 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-opacity"
-                        data-export-ignore="true"
-                      >
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMoveSlot(slotIdx, 'up');
-                          }}
-                          disabled={slotIdx === 0}
-                          className="p-0.5 text-stone-400 hover:text-white disabled:opacity-20 cursor-pointer"
-                          title="Move row up"
-                        >
-                          <ChevronUp className="w-3 h-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMoveSlot(slotIdx, 'down');
-                          }}
-                          disabled={slotIdx === config.slots.length - 1}
-                          className="p-0.5 text-stone-400 hover:text-white disabled:opacity-20 cursor-pointer"
-                          title="Move row down"
-                        >
-                          <ChevronDown className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Day Cells in this time slot */}
+                    {/* Day Cells in this 30-minute time slot */}
                     {config.days.map((day) => {
-                      const cell = getCell(slot.id, day);
-                      const cellMat = cell?.matId ? getMat(cell.matId) : rowMat;
+                      if (isCoveredByEarlierSlot(day, slotIdx)) {
+                        return null; // Spanned across from earlier slot via rowSpan
+                      }
+
+                      const cell = getStartingCell(slotIdx, day);
                       const hasClass = cell && cell.title.trim().length > 0;
                       const isLight = theme === 'light';
 
-                      // Light theme: Clean, high-contrast white card with thick left accent bar
-                      // Dark theme: Rich mat color background with forced pure white text
-                      const slotBg = hasClass
-                        ? isLight
+                      if (hasClass && cell) {
+                        const cellMat = cell.matId ? getMat(cell.matId) : config.mats[0];
+                        const isDraggingThisCell =
+                          activeDragOp !== null &&
+                          activeDragOp.cellId === cell.id;
+
+                        // Slot Start Minutes (from the grid slot row)
+                        const slotStartMins = parseSlotStartMinutes(slot.timeRange);
+
+                        // Parse time range
+                        const parsedStartMins = parseSlotStartMinutes(cell.timeRange || slot.timeRange);
+                        const parsedEndMins = parseSlotEndMinutes(cell.timeRange || slot.timeRange);
+
+                        // If currently dragging / resizing, use live minutes
+                        const effectiveStartMins = isDraggingThisCell && activeDragOp
+                          ? activeDragOp.currentStartMins
+                          : parsedStartMins;
+                        const effectiveEndMins = isDraggingThisCell && activeDragOp
+                          ? activeDragOp.currentEndMins
+                          : parsedEndMins;
+                        const effectiveDuration = Math.max(15, effectiveEndMins - effectiveStartMins);
+
+                        // Fixed table row span based on committed cell duration
+                        const spanSlots = getCellSpanSlots(cell, slot.timeRange);
+
+                        // Pixel-precise positioning (58px per 30 minutes)
+                        const pxPerMin = 58 / 30;
+                        const topPx = (effectiveStartMins - slotStartMins) * pxPerMin;
+                        const heightPx = Math.max(40, effectiveDuration * pxPerMin - 4);
+
+                        const slotBg = isLight
                           ? '#ffffff'
-                          : (cellMat?.bgColor || '#242838')
-                        : undefined;
+                          : (cellMat?.bgColor || '#242838');
 
-                      const matAccentColor = cellMat?.bgColor || '#d97706';
+                        const matAccentColor = cellMat?.bgColor || '#d97706';
+                        const coachName = getCellCoachName(cell);
+                        const formattedStart = formatMinutesToTime(effectiveStartMins);
+                        const formattedEnd = formatMinutesToTime(effectiveEndMins);
 
-                      return (
-                        <div
-                          key={`${slot.id}-${day}`}
-                          onClick={() => handleOpenAssignDropdown(slot.id, day)}
-                          className={`min-h-[96px] p-2.5 border-r transition-all cursor-pointer relative group ${
-                            hasClass
-                              ? isLight
-                                ? 'matboard-cell-occupied border-b border-stone-200 hover:bg-stone-50/90 shadow-xs'
-                                : 'text-white hover:brightness-110 shadow-inner border-stone-800/80'
-                              : 'bg-stone-900/40 hover:bg-stone-800/50 border-stone-800/80'
-                          }`}
-                          style={{
-                            backgroundColor: slotBg,
-                            borderLeft: hasClass && isLight ? `4px solid ${matAccentColor}` : undefined,
-                          }}
-                        >
-                          {hasClass ? (
-                            <div className="flex flex-col h-full justify-between">
-                              {/* Title & Subtitle */}
-                              <div>
-                                <div className="flex items-start justify-between gap-1">
-                                  <h4 className={`text-xs sm:text-[13px] font-black leading-snug tracking-tight ${
+                        return (
+                          <td
+                            key={`${slot.id}-${day}`}
+                            rowSpan={spanSlots}
+                            onClick={(e) => {
+                              // If user was just dragging or active drag is in progress, never open edit modal
+                              if (
+                                isDraggingRef.current ||
+                                activeDragOp !== null ||
+                                Date.now() - dragEndTimeRef.current < 400
+                              ) {
+                                return;
+                              }
+                              // Only open assign dropdown if clicking directly on background area
+                              if (e.target === e.currentTarget) {
+                                handleOpenAssignDropdown(slot.id, day);
+                              }
+                            }}
+                            className={`p-1.5 border-r border-b border-stone-800/80 align-top transition-all relative select-none overflow-visible ${
+                              isLight
+                                ? 'bg-stone-100/40'
+                                : 'bg-stone-950/40'
+                            }`}
+                            style={{
+                              height: `${spanSlots * 58}px`,
+                              minHeight: `${spanSlots * 58}px`,
+                            }}
+                          >
+                            {/* Full Spanned Grid Area Container */}
+                            <div className="relative w-full h-full overflow-visible">
+                              
+                              {/* EXACT PROPORTIONALLY POSITIONED CLASS CARD */}
+                              <div
+                                className={`absolute inset-x-0 rounded-xl transition-[border,box-shadow,background-color] flex flex-col justify-between overflow-visible group select-none ${
+                                  isDraggingThisCell
+                                    ? 'ring-2 ring-red-500 bg-red-500/30 border-2 border-red-500 z-40 shadow-2xl cursor-grabbing'
+                                    : isLight
+                                    ? 'matboard-cell-occupied border border-stone-300 hover:border-red-500/80 hover:shadow-md shadow-xs'
+                                    : 'text-white hover:brightness-110 shadow-lg border border-white/10 hover:border-red-500/50'
+                                }`}
+                                style={{
+                                  top: `${topPx}px`,
+                                  height: `${heightPx}px`,
+                                  backgroundColor: slotBg,
+                                  borderLeft: isLight ? `4px solid ${matAccentColor}` : `3px solid ${matAccentColor}`,
+                                }}
+                                onClick={(e) => {
+                                  // Prevent clicks on card from opening edit modal (use edit button instead)
+                                  e.stopPropagation();
+                                }}
+                              >
+                                {/* TOP SECTION: TOP RESIZE HANDLE & START TIME (Draggable from top to stretch time) */}
+                                <div
+                                  className="w-full pt-1 px-1.5 flex flex-col items-center justify-start z-30 cursor-ns-resize group/tophandle select-none shrink-0"
+                                  onMouseDown={(e) => handleStartDrag(e, cell, slotIdx, day, 'resize-start')}
+                                  title="Drag UP/DOWN to stretch start time"
+                                >
+                                  {/* Top Resize Grip Handle Pill */}
+                                  <div
+                                    className={`px-2.5 py-0.5 rounded-full bg-red-600 hover:bg-red-500 text-white font-black text-[9px] cursor-ns-resize shadow-md flex items-center justify-center gap-0.5 border border-stone-900 select-none transition-all hover:scale-105 ${
+                                      isDraggingThisCell && activeDragOp?.mode === 'resize-start'
+                                        ? 'opacity-100 scale-105 ring-2 ring-red-400'
+                                        : 'opacity-0 group-hover:opacity-100'
+                                    }`}
+                                    data-export-ignore="true"
+                                  >
+                                    <ChevronUp className="w-2.5 h-2.5" />
+                                    <span className="font-mono text-[9px] font-black uppercase tracking-wider">Start</span>
+                                    <ChevronDown className="w-2.5 h-2.5" />
+                                  </div>
+
+                                  {/* START TIME DISPLAY AT TOP OF CLASS */}
+                                  <div className="mt-0.5 flex items-center justify-center gap-1 px-2 py-0.5 rounded-md bg-stone-950/80 text-stone-200 border border-stone-800 text-[10px] font-mono font-black tracking-tight shadow-xs select-none pointer-events-none">
+                                    <Clock className="w-2.5 h-2.5 text-stone-400 shrink-0" />
+                                    <span>Start: {formattedStart}</span>
+                                  </div>
+                                </div>
+
+                                {/* Floating Live Feedback Badge - dynamically positioned near active drag edge */}
+                                {isDraggingThisCell && activeDragOp && (
+                                  <div
+                                    className={`absolute left-1/2 -translate-x-1/2 z-50 px-3 py-1 rounded-full bg-gradient-to-r from-red-600 to-red-500 text-white font-black text-xs shadow-2xl flex items-center gap-1.5 whitespace-nowrap pointer-events-none border-2 border-stone-950 ${
+                                      activeDragOp.mode === 'resize-end' ? '-bottom-10' : '-top-10'
+                                    }`}
+                                  >
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>
+                                      {activeDragOp.mode === 'resize-start'
+                                        ? '▲ Start: '
+                                        : activeDragOp.mode === 'resize-end'
+                                        ? '▼ End: '
+                                        : '⇕ Move: '}
+                                      <strong>{formatMinutesToTime(activeDragOp.currentStartMins)}</strong> – <strong>{formatMinutesToTime(activeDragOp.currentEndMins)}</strong> ({activeDragOp.currentEndMins - activeDragOp.currentStartMins}m)
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* MIDDLE BODY: CLASS TITLE & COACH (Drag here to move entire class) */}
+                                <div
+                                  className="flex-1 flex flex-col justify-center items-center text-center px-2 py-1 min-h-0 w-full cursor-grab active:cursor-grabbing select-none"
+                                  onMouseDown={(e) => {
+                                    // Dragging middle shifts whole class time
+                                    handleStartDrag(e, cell, slotIdx, day, 'move');
+                                  }}
+                                >
+                                  {/* Class Title */}
+                                  <h4 className={`text-xs sm:text-[13px] font-black leading-snug tracking-tight text-center ${
                                     isLight ? 'matboard-cell-title text-stone-950' : 'text-white drop-shadow-xs'
                                   }`}>
                                     {cell.title}
                                   </h4>
+
+                                  {/* Coach Name Only */}
+                                  <div className={`flex items-center justify-center gap-1 text-[11px] font-bold tracking-tight mt-0.5 ${
+                                    isLight ? 'text-stone-700' : 'text-stone-300'
+                                  }`}>
+                                    <User className="w-3 h-3 shrink-0 opacity-80" />
+                                    <span className="truncate max-w-[140px]">{coachName}</span>
+                                  </div>
                                 </div>
-                                {cell.subtitle && (
-                                  <p className={`text-[10px] font-semibold leading-tight mt-0.5 ${
-                                    isLight ? 'matboard-cell-subtitle text-stone-700' : 'text-white/90'
-                                  }`}>
-                                    {cell.subtitle}
-                                  </p>
-                                )}
+
+                                {/* BOTTOM SECTION: END TIME & BOTTOM RESIZE HANDLE */}
+                                <div
+                                  className="w-full pb-1 px-1.5 flex flex-col items-center justify-end z-30 cursor-ns-resize group/bothandle select-none shrink-0"
+                                  onMouseDown={(e) => handleStartDrag(e, cell, slotIdx, day, 'resize-end')}
+                                  title="Drag UP/DOWN to stretch end time"
+                                >
+                                  {/* END TIME DISPLAY AT BOTTOM OF CLASS */}
+                                  <div className="mb-0.5 flex items-center justify-center gap-1 px-2 py-0.5 rounded-md bg-stone-950/80 text-stone-200 border border-stone-800 text-[10px] font-mono font-black tracking-tight shadow-xs select-none pointer-events-none">
+                                    <Clock className="w-2.5 h-2.5 text-stone-400 shrink-0" />
+                                    <span>End: {formattedEnd} ({effectiveDuration}m)</span>
+                                  </div>
+
+                                  {/* Bottom Resize Grip Handle Pill */}
+                                  <div
+                                    className={`px-2.5 py-0.5 rounded-full bg-red-600 hover:bg-red-500 text-white font-black text-[9px] cursor-ns-resize shadow-md flex items-center justify-center gap-0.5 border border-stone-900 select-none transition-all hover:scale-105 ${
+                                      isDraggingThisCell && activeDragOp?.mode === 'resize-end'
+                                        ? 'opacity-100 scale-105 ring-2 ring-red-400'
+                                        : 'opacity-0 group-hover:opacity-100'
+                                    }`}
+                                    data-export-ignore="true"
+                                  >
+                                    <ChevronUp className="w-2.5 h-2.5" />
+                                    <span className="font-mono text-[9px] font-black uppercase tracking-wider">End</span>
+                                    <ChevronDown className="w-2.5 h-2.5" />
+                                  </div>
+                                </div>
+
+                                {/* Dedicated Edit / Reassign button */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleOpenAssignDropdown(slot.id, day);
+                                  }}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 hover:bg-red-600 hover:text-white p-1.5 rounded-lg text-stone-200 border border-white/10 shadow-md cursor-pointer z-40"
+                                  title="Edit or change class assignment"
+                                  data-export-ignore="true"
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                </button>
                               </div>
 
-                              {/* Footer: Instructor & Category Tag */}
-                              <div className={`mt-1.5 pt-1 flex items-center justify-between gap-1 text-[10px] ${
-                                isLight ? 'border-t border-stone-200 text-stone-900' : 'border-t border-white/20 text-white/95'
-                              }`}>
-                                <span className={`font-bold truncate ${isLight ? 'matboard-cell-coach text-stone-950' : ''}`}>
-                                  {cell.instructor || gymSettings.defaultCoach || 'Coach'}
-                                </span>
-                                {cell.category && (
-                                  <span className={`text-[9px] uppercase tracking-wider font-extrabold px-1.5 py-0.2 rounded ${
-                                    isLight
-                                      ? cell.category === 'Kids'
-                                        ? 'bg-emerald-100 text-emerald-950 border border-emerald-300 font-extrabold'
-                                        : cell.category === 'Teens'
-                                        ? 'bg-purple-100 text-purple-950 border border-purple-300 font-extrabold'
-                                        : 'bg-amber-100 text-amber-950 border border-amber-300 font-extrabold'
-                                      : 'opacity-95'
-                                  }`}>
-                                    {cell.category}
-                                  </span>
-                                )}
-                              </div>
                             </div>
-                          ) : (
-                            <div className="h-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-500 bg-stone-950/80 px-2 py-1 rounded-md border border-amber-500/30">
-                                <Plus className="w-3 h-3" />
-                                <span>Assign</span>
-                              </span>
-                            </div>
-                          )}
+                          </td>
+                        );
+                      }
 
-                          {/* Quick edit icon affordance on hover */}
-                          <div
-                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 p-1 rounded text-white"
-                            data-export-ignore="true"
-                          >
-                            <Edit3 className="w-3 h-3 text-amber-300" />
+                      // Empty unoccupied 30-min slot
+                      return (
+                        <td
+                          key={`${slot.id}-${day}`}
+                          onClick={() => handleOpenAssignDropdown(slot.id, day)}
+                          className="p-1.5 h-[58px] border-r border-stone-800 bg-stone-900/40 hover:bg-stone-800/50 cursor-pointer align-middle text-center group"
+                        >
+                          <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-red-400 bg-stone-950/80 px-2 py-1 rounded-md border border-stone-800">
+                              <Plus className="w-3 h-3" />
+                              <span>Assign</span>
+                            </span>
                           </div>
-                        </div>
+                        </td>
                       );
                     })}
-                  </div>
-                </React.Fragment>
-              );
-            })}
-          </div>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -955,13 +1352,13 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
             {/* Header */}
             <div className="p-4 sm:p-5 border-b border-stone-800 flex items-center justify-between bg-stone-950">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-red-600/20 text-red-400 flex items-center justify-center">
                   <BookOpen className="w-4 h-4" />
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
                     <span>Assign Class to Timeslot</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-950/40 text-red-300 border border-red-500/30">
                       Official Gym Classes Only
                     </span>
                   </h3>
@@ -986,7 +1383,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsManageClassesOpen(true)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-stone-800 hover:bg-stone-700 text-amber-300 border border-stone-700 hover:border-amber-400/50 inline-flex items-center gap-1 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 hover:border-red-500/50 inline-flex items-center gap-1 transition-colors cursor-pointer"
                   title="Open classes directory to edit classes or add a new class"
                 >
                   <BookOpen className="w-3.5 h-3.5" />
@@ -1009,7 +1406,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
             {/* Modal Body: ONLY Registered Gym Classes */}
             <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-extrabold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-red-400 flex items-center gap-1.5">
                   <BookOpen className="w-3.5 h-3.5" />
                   <span>Academy Classes Registry ({filteredLiveClasses.length})</span>
                 </span>
@@ -1050,13 +1447,14 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                             subtitle: `${cls.type || 'Gi'}${cls.room ? ` • ${cls.room}` : ''}`,
                             instructor: cls.headCoachName || cls.coach.replace(' (Head Coach)', '') || gymSettings.defaultCoach,
                             category: cls.category,
+                            durationMinutes: cls.durationMinutes,
                           })
                         }
-                        className="p-3.5 rounded-xl bg-stone-850 hover:bg-stone-800 border border-stone-750 hover:border-amber-400/60 cursor-pointer transition-all group shadow-xs flex flex-col justify-between"
+                        className="p-3.5 rounded-xl bg-stone-850 hover:bg-stone-800 border border-stone-750 hover:border-red-500/60 cursor-pointer transition-all group shadow-xs flex flex-col justify-between"
                       >
                         <div>
                           <div className="flex items-start justify-between gap-1.5 mb-1.5">
-                            <h4 className="text-xs sm:text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
+                            <h4 className="text-xs sm:text-sm font-bold text-white group-hover:text-red-300 transition-colors">
                               {cls.title}
                             </h4>
                             {renderCategoryBadge(cls.category)}
@@ -1067,7 +1465,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                               Coach: <strong className="text-stone-300">{cls.headCoachName || cls.coach.replace(' (Head Coach)', '')}</strong>
                             </p>
                             <p>
-                              Style: <span className="text-amber-400/90 font-medium">{cls.type}</span>
+                              Style: <span className="text-stone-300 font-medium">{cls.type}</span>
                               {cls.room && <span> • {cls.room}</span>}
                             </p>
                             {daysStr && (
@@ -1082,7 +1480,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                           <span className="text-stone-500 text-[10px]">
                             {cls.durationMinutes || 75} min session
                           </span>
-                          <span className="font-extrabold text-amber-400 group-hover:text-amber-300 inline-flex items-center gap-1 text-[11px]">
+                          <span className="font-extrabold text-red-400 group-hover:text-red-300 inline-flex items-center gap-1 text-[11px]">
                             <span>Select & Assign</span>
                             <ChevronRight className="w-3 h-3" />
                           </span>
@@ -1133,7 +1531,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
           <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-lg p-5 shadow-2xl animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-stone-800 mb-4">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-red-600/20 text-red-400 flex items-center justify-center">
                   <Clock className="w-4 h-4" />
                 </div>
                 <div>
@@ -1171,7 +1569,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                 <select
                   value={slotMatId}
                   onChange={(e) => setSlotMatId(e.target.value)}
-                  className="w-full px-3 py-2 bg-stone-800 border border-stone-700 rounded-xl text-xs text-white focus:outline-hidden focus:border-amber-400 cursor-pointer"
+                  className="w-full px-3 py-2 bg-stone-800 border border-stone-700 rounded-xl text-xs text-white focus:outline-hidden focus:border-red-400 cursor-pointer"
                 >
                   {config.mats.map((m) => (
                     <option key={m.id} value={m.id}>
@@ -1208,7 +1606,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black rounded-xl text-xs shadow-md cursor-pointer"
+                    className="px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white font-black rounded-xl text-xs shadow-md cursor-pointer"
                   >
                     {editingSlot ? 'Save Time Slot' : 'Add Time Slot'}
                   </button>
@@ -1226,7 +1624,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
             {/* Header */}
             <div className="p-4 sm:p-5 border-b border-stone-800 flex items-center justify-between bg-stone-950">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-red-600/20 text-red-400 flex items-center justify-center">
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
@@ -1257,7 +1655,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                       key={preset.id}
                       className={`p-4 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                         isCurrentSplit
-                          ? 'bg-amber-950/20 border-amber-500/50 hover:border-amber-400'
+                          ? 'bg-red-950/20 border-red-500/50 hover:border-red-400'
                           : 'bg-stone-950/60 border-stone-800 hover:border-stone-700'
                       }`}
                     >
@@ -1266,7 +1664,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                           <h4 className="text-sm font-black text-white flex items-center gap-1.5">
                             <span>{preset.name}</span>
                             {isCurrentSplit && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-950/40 text-red-300 border border-red-500/40">
                                 Recommended
                               </span>
                             )}
@@ -1277,7 +1675,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                           {preset.slots.map((s, idx) => (
                             <span
                               key={idx}
-                              className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-stone-900 border border-stone-700/80 text-amber-300"
+                              className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-stone-900 border border-stone-700/80 text-stone-300"
                             >
                               {s.timeRange}
                             </span>
@@ -1288,7 +1686,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                       <button
                         type="button"
                         onClick={() => handleApplyTimetablePreset(preset.id)}
-                        className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black rounded-xl text-xs shrink-0 self-start sm:self-center shadow-md cursor-pointer transition-transform active:scale-95"
+                        className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-black rounded-xl text-xs shrink-0 self-start sm:self-center shadow-md cursor-pointer transition-transform active:scale-95"
                       >
                         Apply Layout
                       </button>
@@ -1391,7 +1789,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveMats}
-                  className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black rounded-xl text-xs shadow-md cursor-pointer"
+                  className="px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white font-black rounded-xl text-xs shadow-md cursor-pointer"
                 >
                   Save Mat Settings
                 </button>
@@ -1446,9 +1844,9 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
       {/* IN-APP RESET TO DEFAULTS CONFIRMATION MODAL */}
       {isConfirmingReset && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-stone-900 border border-amber-500/40 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+          <div className="bg-stone-900 border border-red-500/40 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
                 <RotateCcw className="w-5 h-5" />
               </div>
               <div>
@@ -1472,7 +1870,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
               <button
                 type="button"
                 onClick={confirmResetDefaults}
-                className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl text-xs font-black transition-colors inline-flex items-center gap-1.5 shadow-md cursor-pointer"
+                className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black transition-colors inline-flex items-center gap-1.5 shadow-md cursor-pointer"
               >
                 <RotateCcw className="w-4 h-4" />
                 <span>Confirm Reset</span>

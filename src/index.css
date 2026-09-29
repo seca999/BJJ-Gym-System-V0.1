@@ -36,7 +36,7 @@ html.theme-light {
 /* Main Backgrounds & Panels */
 html.theme-light .bg-stone-950,
 html.theme-light [class*="bg-stone-950"] {
-  background-color: #f4f4f0 !important;
+  background-color: #f6f6f3 !important;
   color: #1c1917 !important;
 }
 
@@ -45,6 +45,19 @@ html.theme-light [class*="bg-stone-900"] {
   background-color: #ffffff !important;
   color: #1c1917 !important;
   border-color: #e2e2dc !important;
+}
+
+/* Override Dark Gradients in Light Mode */
+html.theme-light [class*="from-stone-900"],
+html.theme-light [class*="from-stone-950"],
+html.theme-light [class*="via-stone-900"],
+html.theme-light [class*="via-stone-950"],
+html.theme-light [class*="to-stone-900"],
+html.theme-light [class*="to-stone-950"],
+html.theme-light [class*="to-amber-950"] {
+  background-image: none !important;
+  background-color: #ffffff !important;
+  color: #1c1917 !important;
 }
 
 html.theme-light .bg-stone-850,
@@ -125,7 +138,7 @@ html.theme-light [class*="text-stone-500"] {
 
 /* Light Mode Matboard Class Slot Overrides - High Contrast & Soothing Colors */
 html.theme-light .matboard-cell-occupied {
-  background-color: #fcfcf9 !important;
+  background-color: #ffffff !important;
   color: #0c0a09 !important;
   border-color: #e2e2dc !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
@@ -146,33 +159,115 @@ html.theme-light .matboard-cell-coach {
   font-weight: 700 !important;
 }
 
-/* Custom forced white text for dark elements in light mode */
+/* Custom forced white text for colored buttons, mat badges, and high-contrast dark badges */
 html.theme-light .text-white-forced,
-html.theme-light .text-white-forced * {
+html.theme-light .text-white-forced *,
+html.theme-light .nav-tab-active,
+html.theme-light .nav-tab-active *,
+html.theme-light .belt-text-white,
+html.theme-light .belt-text-white *,
+html.theme-light .bg-red-500,
+html.theme-light .bg-red-500 *,
+html.theme-light .bg-red-600,
+html.theme-light .bg-red-600 *,
+html.theme-light .bg-red-700,
+html.theme-light .bg-red-700 *,
+html.theme-light .bg-amber-500,
+html.theme-light .bg-amber-500 *,
+html.theme-light .bg-amber-600,
+html.theme-light .bg-amber-600 *,
+html.theme-light .bg-emerald-600,
+html.theme-light .bg-emerald-600 *,
+html.theme-light .bg-blue-600,
+html.theme-light .bg-blue-600 *,
+html.theme-light .bg-purple-600,
+html.theme-light .bg-purple-600 *,
+html.theme-light .bg-orange-600,
+html.theme-light .bg-orange-600 *,
+html.theme-light .badge-mat,
+html.theme-light .badge-mat * {
   color: #ffffff !important;
 }
-html.theme-light .bg-red-600,
-html.theme-light .bg-red-700,
-html.theme-light .bg-red-800,
-html.theme-light .bg-emerald-600,
-html.theme-light .bg-emerald-700,
-html.theme-light .bg-blue-600,
-html.theme-light .bg-blue-700,
-html.theme-light .bg-amber-600,
-html.theme-light .bg-purple-600,
-html.theme-light .bg-indigo-600,
-html.theme-light .bg-black,
-html.theme-light .bg-stone-900.btn-primary,
-html.theme-light .text-white-forced,
-html.theme-light .bg-red-600 *,
-html.theme-light .bg-red-700 *,
-html.theme-light .bg-emerald-600 *,
-html.theme-light .bg-emerald-700 *,
-html.theme-light .bg-blue-600 *,
-html.theme-light .bg-blue-700 *,
-html.theme-light .bg-amber-600 *,
-html.theme-light .bg-purple-600 * {
+
+/* Authentic BJJ Belt Badges & Sleeves (Must remain solid dark rank sleeves in Light Mode) */
+.belt-rank-sleeve,
+html.theme-light .belt-rank-sleeve,
+html.theme-dark .belt-rank-sleeve {
+  background-color: #121212 !important;
+  border-color: #292524 !important;
+}
+
+.belt-rank-sleeve-red,
+html.theme-light .belt-rank-sleeve-red,
+html.theme-dark .belt-rank-sleeve-red {
+  background-color: #dc2626 !important;
+  border-color: #991b1b !important;
+}
+
+/* Black Belt Badge - Obsidian Black in both Light and Dark themes */
+.belt-rank-black,
+html.theme-light .belt-rank-black,
+html.theme-dark .belt-rank-black {
+  background-image: linear-gradient(to right, #181514, #0a0a0a, #181514) !important;
+  background-color: #0c0a09 !important;
+  border-color: #383431 !important;
+  color: #f87171 !important;
+}
+
+/* Brown Belt Badge - Rich Chocolate Brown in both Light and Dark themes */
+.belt-rank-brown,
+html.theme-light .belt-rank-brown,
+html.theme-dark .belt-rank-brown {
+  background-image: linear-gradient(to right, #451a03, #78350f, #451a03) !important;
+  background-color: #451a03 !important;
+  border-color: #78350f !important;
   color: #ffffff !important;
+}
+
+/* Orange-White Belt Badge - High-contrast vibrant safety orange in all themes */
+.belt-rank-orange-white,
+html.theme-light .belt-rank-orange-white,
+html.theme-dark .belt-rank-orange-white {
+  background-image: linear-gradient(to right, #ea580c, #f97316, #ea580c) !important;
+  background-color: #ea580c !important;
+  border-color: #c2410c !important;
+}
+
+.belt-stripe-earned,
+html.theme-light .belt-stripe-earned,
+html.theme-dark .belt-stripe-earned {
+  background-color: #ffffff !important;
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.6) !important;
+  opacity: 1 !important;
+}
+
+/* No dotted lines on belt stripes - clean display */
+.belt-stripe-empty,
+html.theme-light .belt-stripe-empty,
+html.theme-dark .belt-stripe-empty {
+  display: none !important;
+}
+
+/* Absolute Logo Border Elimination - Never show borders around logo */
+#gym-custom-logo-container,
+#gym-custom-logo-container img,
+#gym-emblem-logo-container,
+.gym-logo-unbordered,
+.gym-logo-unbordered img {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  border-width: 0 !important;
+}
+
+/* Active navigation tab highlight */
+.nav-tab-active,
+html.theme-light .nav-tab-active,
+html.theme-dark .nav-tab-active {
+  background-color: #dc2626 !important;
+  color: #ffffff !important;
+  border-bottom: 3px solid #991b1b !important;
+  box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.25), 0 2px 4px -2px rgba(220, 38, 38, 0.2) !important;
 }
 
 /* Form Controls in Light Mode */

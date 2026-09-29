@@ -18,7 +18,9 @@ import {
   SlidersHorizontal,
   CalendarRange,
   Layers,
-  Sparkles
+  Sparkles,
+  Copy,
+  Check
 } from 'lucide-react';
 import { AttendanceRecord, Member, ClassSession, ClassCategory } from '../types';
 import { BeltBadge } from '../utils/bjjBelts';
@@ -71,6 +73,16 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [pendingUndoId, setPendingUndoId] = useState<string | null>(null);
   const [showWeeklyChart, setShowWeeklyChart] = useState(true);
+  const [copiedStudentId, setCopiedStudentId] = useState<string | null>(null);
+
+  const handleCopyName = (e: React.MouseEvent, fullName: string, targetId: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(fullName);
+    setCopiedStudentId(targetId);
+    setTimeout(() => {
+      setCopiedStudentId((prev) => (prev === targetId ? null : prev));
+    }, 1800);
+  };
 
   // Helper to find the reference date (latest attendance date or today)
   const referenceDate = useMemo(() => {
@@ -611,13 +623,13 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
         </div>
 
         <div className="bg-stone-900 border border-stone-800 p-3.5 rounded-xl shadow-xs">
-          <div className="flex items-center justify-between text-amber-400 text-xs mb-1">
+          <div className="flex items-center justify-between text-emerald-400 text-xs mb-1">
             <span>Kids Class</span>
-            <span className="text-[10px] px-1 rounded bg-amber-950 text-amber-300 border border-amber-800">
+            <span className="text-[10px] px-1 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
               {metrics.uniqueKidsCount} kids
             </span>
           </div>
-          <div className="text-xl font-black text-amber-400">{metrics.kidsCheckIns}</div>
+          <div className="text-xl font-black text-emerald-400">{metrics.kidsCheckIns}</div>
           <div className="text-[11px] text-stone-400 mt-0.5">Sat 9:30a • Mon/Wed 4:30p</div>
         </div>
 
@@ -825,12 +837,11 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
             ).map((item) => (
               <button
                 key={item.id}
-                type="button"
                 onClick={() => setFrequencyPreset(item.id)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   frequencyPreset === item.id
                     ? item.id === 'ZERO_0'
-                      ? 'bg-amber-600 text-white shadow-xs font-bold'
+                      ? 'bg-red-600 text-white shadow-xs font-bold'
                       : 'bg-emerald-600 text-white shadow-xs font-bold'
                     : 'bg-stone-800/80 text-stone-300 hover:bg-stone-800 hover:text-white border border-stone-700/60'
                 }`}
@@ -1071,8 +1082,27 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
                                   )}
                                 </button>
                                 <div>
-                                  <div className="font-bold text-white text-sm flex items-center gap-2">
+                                  <div className="font-bold text-white text-sm flex items-center gap-1.5 flex-wrap">
                                     <span>{item.member.fullName}</span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleCopyName(e, item.member.fullName, item.member.id)}
+                                      title={copiedStudentId === item.member.id ? 'Copied name to clipboard!' : `Copy "${item.member.fullName}"`}
+                                      className={`p-1 rounded-md transition-all inline-flex items-center gap-1 text-[11px] cursor-pointer active:scale-95 ${
+                                        copiedStudentId === item.member.id
+                                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                                          : 'text-stone-400 hover:text-white hover:bg-stone-800 border border-transparent'
+                                      }`}
+                                    >
+                                      {copiedStudentId === item.member.id ? (
+                                        <>
+                                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                          <span className="font-mono text-[10px] font-bold">Copied</span>
+                                        </>
+                                      ) : (
+                                        <Copy className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
                                     {item.member.ageGroup && (
                                       <span className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-stone-800 text-stone-300 border border-stone-700">
                                         {item.member.ageGroup}
@@ -1113,7 +1143,7 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
                                 <span
                                   className={`px-2 py-0.5 rounded text-[11px] font-medium ${
                                     item.kidsCount > 0
-                                      ? 'bg-amber-950 text-amber-300 border border-amber-800 font-bold'
+                                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
                                       : 'text-stone-500 bg-stone-950/40'
                                   }`}
                                   title="Kids BJJ Class attendance"
@@ -1191,7 +1221,7 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
                                     item.member.classesRemaining <= 0
                                       ? 'text-red-400'
                                       : item.member.classesRemaining <= 2
-                                      ? 'text-amber-400'
+                                      ? 'text-stone-300'
                                       : 'text-emerald-400'
                                   }`}
                                 >
@@ -1330,7 +1360,7 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
           <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between border-b border-stone-800 pb-3">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-950 px-2 py-0.5 rounded border border-amber-800">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
                   Kids Program (Ages 5-11)
                 </span>
                 <h3 className="text-base font-black text-white mt-1">Kids BJJ Class</h3>
@@ -1339,7 +1369,7 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
                 </p>
               </div>
               <div className="text-right">
-                <div className="text-lg font-black text-amber-400">
+                <div className="text-lg font-black text-emerald-400">
                   {classRosters.kids.reduce((acc, c) => acc + c.count, 0)}
                 </div>
                 <div className="text-[10px] text-stone-400">Total check-ins</div>
@@ -1363,13 +1393,31 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
                     className="bg-stone-950 p-2.5 rounded-xl border border-stone-800 flex items-center justify-between"
                   >
                     <div>
-                      <div className="font-bold text-white text-xs">{member.fullName}</div>
+                      <div className="font-bold text-white text-xs flex items-center gap-1.5">
+                        <span>{member.fullName}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyName(e, member.fullName, `roster-kids-${member.id}`)}
+                          title={copiedStudentId === `roster-kids-${member.id}` ? 'Copied!' : `Copy "${member.fullName}"`}
+                          className={`p-0.5 rounded transition-all inline-flex items-center gap-0.5 text-[10px] cursor-pointer active:scale-95 ${
+                            copiedStudentId === `roster-kids-${member.id}`
+                              ? 'bg-emerald-500/20 text-emerald-400'
+                              : 'text-stone-400 hover:text-white hover:bg-stone-800'
+                          }`}
+                        >
+                          {copiedStudentId === `roster-kids-${member.id}` ? (
+                            <Check className="w-3 h-3 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
                       <div className="mt-0.5">
                         <BeltBadge belt={member.beltRank} stripes={member.stripes} size="sm" />
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="px-2 py-0.5 rounded-full text-xs font-black bg-amber-950 text-amber-300 border border-amber-800">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-black bg-emerald-950 text-emerald-300 border border-emerald-800">
                         {count}x attended
                       </span>
                     </div>
@@ -1416,7 +1464,25 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
                     className="bg-stone-950 p-2.5 rounded-xl border border-stone-800 flex items-center justify-between"
                   >
                     <div>
-                      <div className="font-bold text-white text-xs">{member.fullName}</div>
+                      <div className="font-bold text-white text-xs flex items-center gap-1.5">
+                        <span>{member.fullName}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyName(e, member.fullName, `roster-teens-${member.id}`)}
+                          title={copiedStudentId === `roster-teens-${member.id}` ? 'Copied!' : `Copy "${member.fullName}"`}
+                          className={`p-0.5 rounded transition-all inline-flex items-center gap-0.5 text-[10px] cursor-pointer active:scale-95 ${
+                            copiedStudentId === `roster-teens-${member.id}`
+                              ? 'bg-emerald-500/20 text-emerald-400'
+                              : 'text-stone-400 hover:text-white hover:bg-stone-800'
+                          }`}
+                        >
+                          {copiedStudentId === `roster-teens-${member.id}` ? (
+                            <Check className="w-3 h-3 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
                       <div className="mt-0.5">
                         <BeltBadge belt={member.beltRank} stripes={member.stripes} size="sm" />
                       </div>
@@ -1469,7 +1535,25 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
                     className="bg-stone-950 p-2.5 rounded-xl border border-stone-800 flex items-center justify-between"
                   >
                     <div>
-                      <div className="font-bold text-white text-xs">{member.fullName}</div>
+                      <div className="font-bold text-white text-xs flex items-center gap-1.5">
+                        <span>{member.fullName}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyName(e, member.fullName, `roster-adults-${member.id}`)}
+                          title={copiedStudentId === `roster-adults-${member.id}` ? 'Copied!' : `Copy "${member.fullName}"`}
+                          className={`p-0.5 rounded transition-all inline-flex items-center gap-0.5 text-[10px] cursor-pointer active:scale-95 ${
+                            copiedStudentId === `roster-adults-${member.id}`
+                              ? 'bg-emerald-500/20 text-emerald-400'
+                              : 'text-stone-400 hover:text-white hover:bg-stone-800'
+                          }`}
+                        >
+                          {copiedStudentId === `roster-adults-${member.id}` ? (
+                            <Check className="w-3 h-3 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
                       <div className="mt-0.5">
                         <BeltBadge belt={member.beltRank} stripes={member.stripes} size="sm" />
                       </div>
@@ -1533,7 +1617,25 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
                         </div>
                       </td>
                       <td className="py-3.5 px-3">
-                        <div className="font-bold text-white">{rec.memberName}</div>
+                        <div className="font-bold text-white flex items-center gap-1.5">
+                          <span>{rec.memberName}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyName(e, rec.memberName, `chrono-${rec.id}`)}
+                            title={copiedStudentId === `chrono-${rec.id}` ? 'Copied name!' : `Copy "${rec.memberName}"`}
+                            className={`p-1 rounded-md transition-all inline-flex items-center gap-1 text-[11px] cursor-pointer active:scale-95 ${
+                              copiedStudentId === `chrono-${rec.id}`
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                                : 'text-stone-400 hover:text-white hover:bg-stone-800 border border-transparent'
+                            }`}
+                          >
+                            {copiedStudentId === `chrono-${rec.id}` ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
                       </td>
                       <td className="py-3.5 px-3">
                         <BeltBadge belt={rec.beltRank} stripes={rec.stripes} size="sm" />
@@ -1542,7 +1644,7 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
                         <span
                           className={`px-2 py-0.5 rounded text-[11px] ${
                             rec.classCategory === 'Kids'
-                              ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
                               : rec.classCategory === 'Teens'
                               ? 'bg-blue-950 text-blue-300 border border-blue-800'
                               : 'bg-stone-800 text-stone-200'
@@ -1561,7 +1663,7 @@ export const AttendanceLogView: React.FC<AttendanceLogViewProps> = ({
                               rec.classesRemainingAfter <= 0
                                 ? 'text-red-400'
                                 : rec.classesRemainingAfter <= 2
-                                ? 'text-amber-400'
+                                ? 'text-stone-300'
                                 : 'text-emerald-400'
                             }
                           >

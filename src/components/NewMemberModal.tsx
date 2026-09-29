@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, UserPlus, Shield, CreditCard, AlertCircle, Check, Camera, Upload, Trash2, Sparkles, Calendar, Tag, Layers, CheckCircle2 } from 'lucide-react';
+import { addAuditLog } from '../utils/auditLogger';
+import { X, UserPlus, Shield, CreditCard, AlertCircle, Check, Camera, Upload, Trash2, Sparkles, Calendar, Tag, Layers, CheckCircle2, Crown, Plus } from 'lucide-react';
 import { Member, BeltRank, StripeCount, MembershipType, PaymentMethod, PaymentRecord, ClassCategory, SubscriptionPlan } from '../types';
 import { 
   getBeltsForAgeGroup, 
@@ -19,6 +20,7 @@ import {
   getIBJJFTransferMilestone 
 } from '../utils/ibjjfAgeManager';
 import { formatCurrency } from '../utils/currencyUtils';
+import { getJordanDateStr, getJordanTimeStr } from '../utils/timeUtils';
 
 interface NewMemberModalProps {
   isOpen: boolean;
@@ -35,7 +37,7 @@ export const NewMemberModal: React.FC<NewMemberModalProps> = ({
   subscriptionPlans = [],
   currencySymbol = 'JOD',
 }) => {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getJordanDateStr();
 
   // Form states
   const [fullName, setFullName] = useState('');
@@ -59,6 +61,7 @@ export const NewMemberModal: React.FC<NewMemberModalProps> = ({
 
   // Selected plan from Plans & Pricing
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+  const [planFilterTab, setPlanFilterTab] = useState<'AUTO' | 'Adults' | 'Kids' | 'Teens' | 'VIP'>('AUTO');
   const [membershipType, setMembershipType] = useState<MembershipType>('class_pack');
   const [classesTotal, setClassesTotal] = useState<number>(8);
   const [notes, setNotes] = useState('');
@@ -73,11 +76,18 @@ export const NewMemberModal: React.FC<NewMemberModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dobInputRef = useRef<HTMLInputElement>(null);
 
-  // Filter plans relevant to selected student age category
-  const categoryPlans = activePlans.filter(
-    (p) => p.category === ageGroup || p.category === 'All Levels'
-  );
-  const displayPlans = categoryPlans.length > 0 ? categoryPlans : activePlans;
+  // Filter plans relevant to selected tab or student age category
+  const activeTabFilter = planFilterTab === 'AUTO' ? ageGroup : planFilterTab;
+  
+  const displayPlans = activePlans.filter((p) => {
+    const isVipPlan = p.category === 'VIP' || !!p.isVip || p.id.includes('vip');
+    if (activeTabFilter === 'VIP') return isVipPlan;
+    if (isVipPlan) return false;
+    if (activeTabFilter === 'Adults') return p.category === 'Adults' || p.category === 'All Levels';
+    if (activeTabFilter === 'Kids') return p.category === 'Kids' || p.category === 'All Levels';
+    if (activeTabFilter === 'Teens') return p.category === 'Teens' || p.category === 'All Levels';
+    return true;
+  });
 
   // Sync default selected plan when age group or available plans change
   useEffect(() => {
@@ -91,7 +101,7 @@ export const NewMemberModal: React.FC<NewMemberModalProps> = ({
         setPaymentAmount(match.price);
       }
     }
-  }, [ageGroup, subscriptionPlans.length]);
+  }, [ageGroup, planFilterTab, subscriptionPlans.length]);
 
   if (!isOpen) return null;
 
@@ -158,7 +168,7 @@ export const NewMemberModal: React.FC<NewMemberModalProps> = ({
     let initialPaymentData = undefined;
     if (recordPaymentNow && paymentAmount > 0) {
       const now = new Date();
-      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const timeStr = getJordanTimeStr(now, false);
 
       initialPaymentData = {
         amount: Number(paymentAmount),
@@ -175,6 +185,15 @@ export const NewMemberModal: React.FC<NewMemberModalProps> = ({
     }
 
     onRegister(newMember, initialPaymentData);
+
+    addAuditLog({
+      userName: 'Professor Lucas Silva',
+      userRole: 'Head Coach & Admin',
+      action: 'New Member Registered',
+      category: 'MEMBER',
+      details: `Registered new student ${newMember.fullName} (${newMember.ageGroup} Division, ${planName}).`,
+    });
+
     onClose();
   };
 
@@ -210,71 +229,39 @@ export const NewMemberModal: React.FC<NewMemberModalProps> = ({
               1. Student Details
             </h3>
 
-            {/* Primary Age Category / IBJJF Division Selector */}
-            <div className="space-y-1.5 p-3 bg-stone-950/80 rounded-xl border border-stone-800">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-stone-200 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-red-500" />
-                  <span>Student Age Division (IBJJF Standard):</span>
-                </label>
-                <span className="text-[10px] text-stone-400">
-                  {ageGroup === 'Kids' ? '🧒 Youth Belts (White to Green-Black)' : ageGroup === 'Teens' ? '🥋 Juvenile Ranks (16-17)' : '👤 Adult Ranks (18+)'}
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAgeGroup('Kids');
-                    if (!KIDS_BELT_RANKS.includes(beltRank)) {
-                      setBeltRank('White');
-                    }
-                  }}
-                  className={`py-2 px-2 rounded-xl text-xs font-bold transition-all border text-center flex flex-col items-center gap-0.5 cursor-pointer ${
-                    ageGroup === 'Kids'
-                      ? 'bg-amber-500 text-stone-950 border-amber-400 shadow-md font-black ring-2 ring-amber-400/50'
-                      : 'bg-stone-900 text-stone-300 hover:text-white border-stone-800 hover:bg-stone-850'
-                  }`}
-                >
-                  <span className="text-xs sm:text-sm">🧒 Kids</span>
-                  <span className="text-[10px] opacity-80">Ages 4-15 (13 Belts)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAgeGroup('Teens');
-                    if (!TEENS_BELT_RANKS.includes(beltRank)) {
-                      setBeltRank('White');
-                    }
-                  }}
-                  className={`py-2 px-2 rounded-xl text-xs font-bold transition-all border text-center flex flex-col items-center gap-0.5 cursor-pointer ${
-                    ageGroup === 'Teens'
-                      ? 'bg-purple-600 text-white border-purple-500 shadow-md font-black ring-2 ring-purple-400/50'
-                      : 'bg-stone-900 text-stone-300 hover:text-white border-stone-800 hover:bg-stone-850'
-                  }`}
-                >
-                  <span className="text-xs sm:text-sm">🥋 Teens</span>
-                  <span className="text-[10px] opacity-80">Ages 16-17 (Juvenile)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAgeGroup('Adults');
-                    if (!ADULT_BELT_RANKS.includes(beltRank)) {
-                      setBeltRank('White');
-                    }
-                  }}
-                  className={`py-2 px-2 rounded-xl text-xs font-bold transition-all border text-center flex flex-col items-center gap-0.5 cursor-pointer ${
-                    ageGroup === 'Adults'
-                      ? 'bg-red-600 text-white border-red-500 shadow-md font-black ring-2 ring-red-400/50'
-                      : 'bg-stone-900 text-stone-300 hover:text-white border-stone-800 hover:bg-stone-850'
-                  }`}
-                >
-                  <span className="text-xs sm:text-sm">👤 Adults</span>
-                  <span className="text-[10px] opacity-80">Ages 18+ (White-Black)</span>
-                </button>
+            {/* Date of Birth & Auto-Detected Division Banner */}
+            <div className="p-3.5 bg-stone-950/80 rounded-xl border border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 shadow-sm ${
+                  ageGroup === 'Kids'
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                    : ageGroup === 'Teens'
+                    ? 'bg-purple-500/20 text-purple-400 border border-purple-500/40'
+                    : 'bg-red-500/20 text-red-400 border border-red-500/40'
+                }`}>
+                  <Shield className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-stone-200">
+                      Auto-Detected Student Division:
+                    </span>
+                    <span className={`px-2.5 py-0.5 rounded-md text-xs font-black shadow-xs ${
+                      ageGroup === 'Kids'
+                        ? 'bg-amber-500 text-stone-950'
+                        : ageGroup === 'Teens'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-red-600 text-white'
+                    }`}>
+                      {ageGroup === 'Kids' ? '🧒 Kids (Ages 4-15)' : ageGroup === 'Teens' ? '🥋 Teens (Ages 16-17)' : '👤 Adults (Ages 18+)'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-stone-400 mt-0.5">
+                    {birthDate
+                      ? `Calculated Age: ${calculateStudentAge(birthDate, todayStr)} yrs (Competition Age ${calculateIBJJFCompetitionAge(birthDate)}) • Unlocking ${ageGroup} belt ranks & programs`
+                      : 'Calculated automatically from student Date of Birth below (defaults to Adults until DOB is selected)'}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -461,7 +448,10 @@ export const NewMemberModal: React.FC<NewMemberModalProps> = ({
                   <input
                     ref={dobInputRef}
                     type="date"
+                    max={todayStr}
+                    min="1920-01-01"
                     value={birthDate}
+                    style={{ colorScheme: 'dark' }}
                     onChange={(e) => {
                       const newDob = e.target.value;
                       setBirthDate(newDob);
@@ -517,32 +507,6 @@ export const NewMemberModal: React.FC<NewMemberModalProps> = ({
                 )}
               </div>
 
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-stone-300 mb-1.5">
-                  Class Program / Age Category
-                </label>
-                <select
-                  value={ageGroup}
-                  onChange={(e) => {
-                    const newAge = e.target.value as ClassCategory;
-                    setAgeGroup(newAge);
-                    const allowedBelts = getBeltsForAgeGroup(newAge);
-                    if (!allowedBelts.includes(beltRank)) {
-                      setBeltRank(allowedBelts[0]);
-                    }
-                  }}
-                  className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-red-500 font-bold"
-                >
-                  <option value="Kids">Kids Class (Ages 4-15 • 13 IBJJF Youth Belts: White to Green-Black)</option>
-                  <option value="Teens">Teens / Juvenile (Ages 16-17 • White, Blue, Purple)</option>
-                  <option value="Adults">Adults Class (Ages 18+ • White through Black)</option>
-                </select>
-                <p className="text-[11px] text-stone-400 mt-1.5">
-                  {ageGroup === 'Kids' && '🧒 IBJJF Kids System: Full youth progression available (Grey, Yellow, Orange, Green).'}
-                  {ageGroup === 'Teens' && 'ℹ️ Juveniles (16-17) auto-graduate to Adults at 18. White, Blue, Purple belts.'}
-                  {ageGroup === 'Adults' && 'ℹ️ Adult ranks (18+): White, Blue, Purple, Brown, Black.'}
-                </p>
-              </div>
             </div>
           </div>
 
@@ -721,62 +685,145 @@ export const NewMemberModal: React.FC<NewMemberModalProps> = ({
             <div className="flex items-center justify-between">
               <h3 className="text-sm sm:text-base font-extrabold uppercase tracking-wider text-red-500 flex items-center gap-1.5">
                 <Tag className="w-4 h-4 text-red-500" />
-                <span>3. Monthly Subscription Plan ({ageGroup})</span>
+                <span>3. Monthly Subscription Plan</span>
               </h3>
               <span className="text-xs text-amber-400 font-bold">
                 Valid for 1 Month (30 Days)
               </span>
             </div>
-            <p className="text-xs sm:text-sm text-stone-400 leading-relaxed">
-              Select one of the official academy subscription plans configured in the Plans & Pricing section. Each plan is valid for 1 month from registration.
-            </p>
+
+            {/* Plan Category Filter Tabs */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-1.5 bg-stone-950 rounded-xl border border-stone-800">
+              <div className="flex items-center gap-1 flex-wrap">
+                {([
+                  { id: 'AUTO' as const, label: `Auto: ${ageGroup}`, isVip: false },
+                  { id: 'Adults' as const, label: 'Adults', isVip: false },
+                  { id: 'Kids' as const, label: 'Kids', isVip: false },
+                  { id: 'Teens' as const, label: 'Teens', isVip: false },
+                  { id: 'VIP' as const, label: '★ VIP 1-on-1', isVip: true },
+                ]).map((tab) => {
+                  const isCurrent = planFilterTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setPlanFilterTab(tab.id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        isCurrent
+                          ? tab.isVip
+                            ? 'bg-amber-500 text-stone-950 font-black shadow-md shadow-amber-950/50'
+                            : 'bg-red-600 text-white shadow-xs'
+                          : tab.isVip
+                          ? 'text-amber-400/90 hover:text-amber-300 hover:bg-amber-950/40'
+                          : 'text-stone-400 hover:text-white hover:bg-stone-800'
+                      }`}
+                    >
+                      {tab.isVip && <Crown className="w-3.5 h-3.5" />}
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {planFilterTab === 'VIP' && (
+                <span className="text-[11px] text-amber-400 font-bold px-2 py-0.5 rounded bg-amber-950/60 border border-amber-500/30">
+                  Exclusive 1:1 Coaching
+                </span>
+              )}
+            </div>
+
+            {/* VIP Explanatory Callout Banner */}
+            {planFilterTab === 'VIP' && (
+              <div className="p-3 bg-gradient-to-r from-amber-950/60 via-stone-900 to-amber-950/40 rounded-xl border border-amber-500/40 flex items-center gap-3">
+                <div className="p-2 bg-amber-500/20 rounded-lg text-amber-400 shrink-0">
+                  <Crown className="w-5 h-5" />
+                </div>
+                <div className="text-xs">
+                  <span className="font-bold text-amber-300 block">VIP 1-on-1 Registration Selected</span>
+                  <span className="text-stone-300 text-[11px]">
+                    Student will receive dedicated private 1:1 sessions, personal coach assignment, and VIP locker privileges.
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Plans List From Plans & Pricing Section */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {displayPlans.map((plan) => {
-                const isSelected = selectedPlanId === plan.id;
-                const isUnlim = plan.classesCount === -1;
-                return (
-                  <button
-                    key={plan.id}
-                    type="button"
-                    onClick={() => handleSelectPlan(plan)}
-                    className={`p-4 rounded-xl border text-left transition-all cursor-pointer relative ${
-                      isSelected
-                        ? 'bg-red-950/70 border-red-500 text-white shadow-md ring-1 ring-red-500/50'
-                        : 'bg-stone-950 border-stone-800 text-stone-300 hover:border-stone-700'
-                    }`}
-                  >
-                    {isSelected && (
-                      <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center">
-                        <Check className="w-3.5 h-3.5" />
-                      </div>
-                    )}
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded bg-stone-800 text-amber-400 font-bold">
-                        {plan.category}
-                      </span>
-                      {plan.isPopular && (
-                        <span className="text-[9px] sm:text-[10px] px-2 py-0.5 rounded bg-red-900/80 text-red-200 font-bold">
-                          Popular
-                        </span>
+            {displayPlans.length === 0 ? (
+              <div className="p-6 text-center bg-stone-950 rounded-xl border border-dashed border-stone-800 text-stone-400 text-xs">
+                No active plans found for this category.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {displayPlans.map((plan) => {
+                  const isSelected = selectedPlanId === plan.id;
+                  const isUnlim = plan.classesCount === -1;
+                  const isVipPlan = plan.category === 'VIP' || plan.isVip || plan.id.includes('vip');
+
+                  return (
+                    <button
+                      key={plan.id}
+                      type="button"
+                      onClick={() => handleSelectPlan(plan)}
+                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer relative ${
+                        isSelected
+                          ? isVipPlan
+                            ? 'bg-amber-950/70 border-amber-500 text-white shadow-lg shadow-amber-950/40 ring-1 ring-amber-500/50'
+                            : 'bg-red-950/70 border-red-500 text-white shadow-md ring-1 ring-red-500/50'
+                          : isVipPlan
+                          ? 'bg-stone-950 border-amber-500/30 text-stone-300 hover:border-amber-500/60'
+                          : 'bg-stone-950 border-stone-800 text-stone-300 hover:border-stone-700'
+                      }`}
+                    >
+                      {isSelected && (
+                        <div className={`absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center ${
+                          isVipPlan ? 'bg-amber-500 text-stone-950' : 'bg-red-600 text-white'
+                        }`}>
+                          <Check className="w-3.5 h-3.5" />
+                        </div>
                       )}
-                    </div>
-                    <div className="font-extrabold text-xs sm:text-sm text-white line-clamp-1">{plan.name}</div>
-                    <div className="text-lg sm:text-xl font-black text-white mt-1">
-                      {formatCurrency(plan.price, currencySymbol)}
-                    </div>
-                    <div className="text-[11px] sm:text-xs text-stone-400 mt-1.5">
-                      {isUnlim ? 'Unlimited Classes' : `${plan.classesCount} Classes`} • 1 Month
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded font-bold ${
+                          isVipPlan ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-stone-800 text-amber-400'
+                        }`}>
+                          {plan.category}
+                        </span>
+                        {plan.isPopular && (
+                          <span className="text-[9px] sm:text-[10px] px-2 py-0.5 rounded bg-red-900/80 text-red-200 font-bold">
+                            Popular
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-extrabold text-xs sm:text-sm text-white line-clamp-1">{plan.name}</div>
+                      <div className={`text-lg sm:text-xl font-black mt-1 ${isVipPlan ? 'text-amber-400' : 'text-white'}`}>
+                        {formatCurrency(plan.price, currencySymbol)}
+                      </div>
+                      <div className="text-[11px] sm:text-xs text-stone-400 mt-1.5">
+                        {isVipPlan
+                          ? isUnlim
+                            ? 'Unlimited Mat + VIP Privates'
+                            : `${plan.classesCount} 1-on-1 Sessions`
+                          : isUnlim
+                          ? 'Unlimited Classes'
+                          : `${plan.classesCount} Classes`} • {plan.durationDays || 30} Days
+                      </div>
+                      {isVipPlan && plan.vipCoachName && (
+                        <div className="mt-2 pt-2 border-t border-stone-850 text-[10px] text-amber-300/90 font-medium truncate">
+                          Coach: {plan.vipCoachName}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Selected Plan Summary Banner */}
             {selectedPlanId && (
-              <div className="p-4 bg-stone-950 rounded-xl border border-stone-800 text-xs sm:text-sm flex items-center justify-between text-stone-300 shadow-inner">
+              <div className={`p-4 rounded-xl border text-xs sm:text-sm flex items-center justify-between shadow-inner ${
+                activePlans.find(p => p.id === selectedPlanId)?.category === 'VIP' || activePlans.find(p => p.id === selectedPlanId)?.isVip
+                  ? 'bg-stone-950 border-amber-500/40 text-stone-200'
+                  : 'bg-stone-950 border-stone-800 text-stone-300'
+              }`}>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                   <span>

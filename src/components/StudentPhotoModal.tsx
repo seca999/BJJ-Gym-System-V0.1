@@ -123,7 +123,7 @@ export const StudentPhotoModal: React.FC<StudentPhotoModalProps> = ({
             <div>
               <h2 className="text-base font-bold text-white">Student Picture</h2>
               <p className="text-xs text-stone-400">
-                Update picture for <span className="text-amber-400 font-semibold">{member.fullName}</span>
+                Update picture for <span className="text-red-400 font-semibold">{member.fullName}</span>
               </p>
             </div>
           </div>
@@ -149,7 +149,7 @@ export const StudentPhotoModal: React.FC<StudentPhotoModalProps> = ({
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <div className="w-16 h-16 rounded-xl bg-stone-800 border-2 border-stone-700 flex items-center justify-center text-amber-400 font-bold text-xl shadow-inner">
+                <div className="w-16 h-16 rounded-xl bg-stone-800 border-2 border-stone-700 flex items-center justify-center text-stone-300 font-bold text-xl shadow-inner">
                   {member.fullName.charAt(0)}
                 </div>
               )}
@@ -215,7 +215,7 @@ export const StudentPhotoModal: React.FC<StudentPhotoModalProps> = ({
                   : 'border-transparent text-stone-400 hover:text-stone-300'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <Sparkles className="w-3.5 h-3.5 text-red-400" />
               <span>BJJ Presets</span>
             </button>
           </div>
@@ -268,7 +268,7 @@ export const StudentPhotoModal: React.FC<StudentPhotoModalProps> = ({
                   onClick={() => cameraInputRef.current?.click()}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-lg text-xs font-semibold border border-stone-700 transition-colors"
                 >
-                  <Camera className="w-3.5 h-3.5 text-amber-400" />
+                  <Camera className="w-3.5 h-3.5 text-red-400" />
                   <span>Take Mat Photo</span>
                 </button>
 

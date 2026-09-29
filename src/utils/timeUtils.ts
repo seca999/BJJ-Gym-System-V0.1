@@ -1,6 +1,130 @@
 /**
  * Time utility functions for mouse-driven scheduling and automatic duration calculation
+ * Unified on Jordanian Time Protocol (Asia/Amman, UTC+3)
  */
+
+export const JORDAN_TIMEZONE = 'Asia/Amman';
+
+/**
+ * Returns today's date formatted as "YYYY-MM-DD" in Jordan / Amman timezone
+ */
+export function getJordanDateStr(date: Date = new Date()): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: JORDAN_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    return formatter.format(date); // en-CA outputs YYYY-MM-DD
+  } catch {
+    const d = new Date(date.getTime() + 3 * 3600 * 1000);
+    return d.toISOString().split('T')[0];
+  }
+}
+
+/**
+ * Returns current time formatted as "HH:mm:ss" or "HH:mm" in Jordan / Amman timezone (24-hour)
+ */
+export function getJordanTimeStr(date: Date = new Date(), withSeconds = true): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: JORDAN_TIMEZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: withSeconds ? '2-digit' : undefined,
+      hour12: false,
+    });
+    return formatter.format(date);
+  } catch {
+    const d = new Date(date.getTime() + 3 * 3600 * 1000);
+    const h = String(d.getUTCHours()).padStart(2, '0');
+    const m = String(d.getUTCMinutes()).padStart(2, '0');
+    const s = String(d.getUTCSeconds()).padStart(2, '0');
+    return withSeconds ? `${h}:${m}:${s}` : `${h}:${m}`;
+  }
+}
+
+/**
+ * Returns current time formatted as "hh:mm A" or "hh:mm:ss A" in Jordan / Amman timezone (12-hour)
+ */
+export function getJordanTime12Str(date: Date = new Date(), withSeconds = false): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: JORDAN_TIMEZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: withSeconds ? '2-digit' : undefined,
+      hour12: true,
+    });
+    return formatter.format(date);
+  } catch {
+    const d = new Date(date.getTime() + 3 * 3600 * 1000);
+    const rawH = d.getUTCHours();
+    const period = rawH >= 12 ? 'PM' : 'AM';
+    const displayH = rawH % 12 === 0 ? 12 : rawH % 12;
+    const m = String(d.getUTCMinutes()).padStart(2, '0');
+    const s = String(d.getUTCSeconds()).padStart(2, '0');
+    return withSeconds
+      ? `${String(displayH).padStart(2, '0')}:${m}:${s} ${period}`
+      : `${String(displayH).padStart(2, '0')}:${m} ${period}`;
+  }
+}
+
+/**
+ * Formats a Date object or ISO string in Jordan / Amman timezone
+ */
+export function formatJordanDate(
+  date: Date | string = new Date(),
+  options: Intl.DateTimeFormatOptions = {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }
+): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return d.toLocaleDateString('en-US', {
+    timeZone: JORDAN_TIMEZONE,
+    ...options,
+  });
+}
+
+/**
+ * Gets the current hour, minute and total minutes in Jordan timezone
+ */
+export function getJordanCurrentMinutes(date: Date = new Date()): { hours: number; minutes: number; totalMinutes: number } {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: JORDAN_TIMEZONE,
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+    }).formatToParts(date);
+
+    let hours = 0;
+    let minutes = 0;
+    parts.forEach((p) => {
+      if (p.type === 'hour') hours = parseInt(p.value, 10) % 24;
+      if (p.type === 'minute') minutes = parseInt(p.value, 10);
+    });
+    return { hours, minutes, totalMinutes: hours * 60 + minutes };
+  } catch {
+    const d = new Date(date.getTime() + 3 * 3600 * 1000);
+    const hours = d.getUTCHours();
+    const minutes = d.getUTCMinutes();
+    return { hours, minutes, totalMinutes: hours * 60 + minutes };
+  }
+}
+
+/**
+ * Returns a Date object representing Jordan time
+ */
+export function toJordanDate(date: Date | string = new Date()): Date {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const str = d.toLocaleString('en-US', { timeZone: JORDAN_TIMEZONE });
+  return new Date(str);
+}
 
 // Generate 15-minute intervals from 5:00 AM to 11:45 PM
 export const TIME_OPTIONS: string[] = (() => {
@@ -165,6 +289,24 @@ export function formatTimeRange(start: string, end: string): string {
 }
 
 /**
+ * Extracts start time in minutes from midnight (0 - 1440) for a slot or class time range
+ */
+export function parseSlotStartMinutes(timeOrRangeStr: string): number {
+  if (!timeOrRangeStr) return 0;
+  const { start } = parseTimeRange(timeOrRangeStr);
+  return parseTimeToMinutes(start);
+}
+
+/**
+ * Extracts end time in minutes from midnight (0 - 1440) for a slot or class time range
+ */
+export function parseSlotEndMinutes(timeOrRangeStr: string): number {
+  if (!timeOrRangeStr) return 0;
+  const { end } = parseTimeRange(timeOrRangeStr);
+  return parseTimeToMinutes(end);
+}
+
+/**
  * Quick duration choices in minutes
  */
 export const DURATION_PRESETS = [
@@ -229,4 +371,46 @@ export const ACADEMY_TIMETABLE_PRESETS = [
       { id: 'slot-fd-6', timeRange: '08:30 PM - 09:30 PM', matId: 'mat-1' },
     ],
   },
+  {
+    id: 'fixed-6am-10pm',
+    name: 'Fixed Time Slots (6:00 AM - 10:00 PM)',
+    description: 'Fixed hourly slots from 6 AM early morning until 10 PM night dojo',
+    slots: [
+      { id: 'slot-6am', timeRange: '06:00 AM - 07:00 AM', matId: 'mat-1' },
+      { id: 'slot-7am', timeRange: '07:00 AM - 08:00 AM', matId: 'mat-1' },
+      { id: 'slot-8am', timeRange: '08:00 AM - 09:00 AM', matId: 'mat-1' },
+      { id: 'slot-9am', timeRange: '09:00 AM - 10:00 AM', matId: 'mat-1' },
+      { id: 'slot-10am', timeRange: '10:00 AM - 11:00 AM', matId: 'mat-1' },
+      { id: 'slot-11am', timeRange: '11:00 AM - 12:00 PM', matId: 'mat-1' },
+      { id: 'slot-12pm', timeRange: '12:00 PM - 01:00 PM', matId: 'mat-1' },
+      { id: 'slot-1pm', timeRange: '01:00 PM - 02:00 PM', matId: 'mat-1' },
+      { id: 'slot-2pm', timeRange: '02:00 PM - 03:00 PM', matId: 'mat-1' },
+      { id: 'slot-3pm', timeRange: '03:00 PM - 04:00 PM', matId: 'mat-1' },
+      { id: 'slot-4pm', timeRange: '04:00 PM - 05:00 PM', matId: 'mat-1' },
+      { id: 'slot-5pm', timeRange: '05:00 PM - 06:00 PM', matId: 'mat-1' },
+      { id: 'slot-6pm', timeRange: '06:00 PM - 07:00 PM', matId: 'mat-1' },
+      { id: 'slot-7pm', timeRange: '07:00 PM - 08:00 PM', matId: 'mat-1' },
+      { id: 'slot-8pm', timeRange: '08:00 PM - 09:00 PM', matId: 'mat-1' },
+      { id: 'slot-9pm', timeRange: '09:00 PM - 10:00 PM', matId: 'mat-1' },
+    ],
+  },
+];
+
+export const FIXED_6AM_10PM_HOURLY_SLOTS = [
+  '06:00 AM - 07:00 AM',
+  '07:00 AM - 08:00 AM',
+  '08:00 AM - 09:00 AM',
+  '09:00 AM - 10:00 AM',
+  '10:00 AM - 11:00 AM',
+  '11:00 AM - 12:00 PM',
+  '12:00 PM - 01:00 PM',
+  '01:00 PM - 02:00 PM',
+  '02:00 PM - 03:00 PM',
+  '03:00 PM - 04:00 PM',
+  '04:00 PM - 05:00 PM',
+  '05:00 PM - 06:00 PM',
+  '06:00 PM - 07:00 PM',
+  '07:00 PM - 08:00 PM',
+  '08:00 PM - 09:00 PM',
+  '09:00 PM - 10:00 PM',
 ];

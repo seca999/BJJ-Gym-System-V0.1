@@ -2,17 +2,12 @@ import React, { useState } from 'react';
 import { 
   CreditCard, 
   Search, 
-  Filter, 
   Download, 
   Receipt, 
-  PlusCircle, 
   DollarSign, 
-  TrendingUp, 
-  Calendar,
-  Wallet,
   ArrowUpDown,
-  Award,
-  Users
+  Copy,
+  Check
 } from 'lucide-react';
 import { PaymentRecord, Member, PaymentMethod, Coach, AttendanceRecord, ClassSession } from '../types';
 import { BeltBadge } from '../utils/bjjBelts';
@@ -25,11 +20,11 @@ interface PaymentsLedgerViewProps {
   coaches?: Coach[];
   attendance?: AttendanceRecord[];
   classes?: ClassSession[];
-  onOpenPayment: () => void;
   onViewReceipt: (payment: PaymentRecord) => void;
   onAddCoach?: (coach: Coach) => void;
   onUpdateCoach?: (coach: Coach) => void;
   onDeleteCoach?: (coachId: string) => void;
+  theme?: 'light' | 'dark';
 }
 
 export const PaymentsLedgerView: React.FC<PaymentsLedgerViewProps> = ({
@@ -38,17 +33,27 @@ export const PaymentsLedgerView: React.FC<PaymentsLedgerViewProps> = ({
   coaches = [],
   attendance = [],
   classes = [],
-  onOpenPayment,
   onViewReceipt,
   onAddCoach,
   onUpdateCoach,
   onDeleteCoach,
+  theme = 'dark',
 }) => {
   const [mainSubTab, setMainSubTab] = useState<'student_payments' | 'coach_salaries'>('student_payments');
   const [searchQuery, setSearchQuery] = useState('');
   const [methodFilter, setMethodFilter] = useState<string>('ALL');
   const [dateRangeFilter, setDateRangeFilter] = useState<'ALL' | 'THIS_MONTH' | 'LAST_30_DAYS'>('ALL');
   const [sortOrder, setSortOrder] = useState<'DATETIME_DESC' | 'DATETIME_ASC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>('DATETIME_DESC');
+  const [copiedStudentId, setCopiedStudentId] = useState<string | null>(null);
+
+  const handleCopyName = (e: React.MouseEvent, fullName: string, targetId: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(fullName);
+    setCopiedStudentId(targetId);
+    setTimeout(() => {
+      setCopiedStudentId((prev) => (prev === targetId ? null : prev));
+    }, 1800);
+  };
 
   // Member map for quick lookup
   const memberMap = new Map(members.map((m) => [m.id, m]));
@@ -92,12 +97,6 @@ export const PaymentsLedgerView: React.FC<PaymentsLedgerViewProps> = ({
     if (sortOrder === 'AMOUNT_ASC') return a.amount - b.amount;
     return 0;
   });
-
-  // Financial calculations
-  const totalAllTime = payments.reduce((acc, p) => acc + p.amount, 0);
-  const thisMonthPayments = payments.filter((p) => p.date.startsWith(currentYearMonth));
-  const totalThisMonth = thisMonthPayments.reduce((acc, p) => acc + p.amount, 0);
-  const averagePayment = payments.length > 0 ? totalAllTime / payments.length : 0;
 
   // Export to CSV
   const handleExportCSV = () => {
@@ -145,17 +144,18 @@ export const PaymentsLedgerView: React.FC<PaymentsLedgerViewProps> = ({
           onClick={() => setMainSubTab('coach_salaries')}
           className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black inline-flex items-center justify-center gap-2 transition-all cursor-pointer ${
             mainSubTab === 'coach_salaries'
-              ? 'bg-amber-600 text-stone-950 shadow-md'
+              ? 'bg-red-600 text-white shadow-md'
               : 'text-stone-400 hover:text-white hover:bg-stone-800'
           }`}
         >
-          <DollarSign className="w-4 h-4 text-amber-300" />
+          <DollarSign className="w-4 h-4 text-white" />
           <span>Coach Salaries & Payroll Engine ({coaches.length} Instructors)</span>
         </button>
       </div>
 
       {mainSubTab === 'coach_salaries' ? (
         <CoachesDirectoryView
+          theme={theme}
           coaches={coaches}
           attendance={attendance}
           classes={classes}
@@ -165,149 +165,77 @@ export const PaymentsLedgerView: React.FC<PaymentsLedgerViewProps> = ({
         />
       ) : (
         <>
-          {/* Top Header & Metrics Grid */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-stone-900 p-4 rounded-xl border border-stone-800">
-            <div>
-              <h2 className="text-lg font-bold text-white">Payments & Tuition Ledger</h2>
-              <p className="text-xs text-stone-400">
-                Track student payment records, payment dates, amounts, and punch-card renewals.
-              </p>
+          {/* Filter, Search and Export Bar */}
+          <div className="bg-stone-900 p-3 rounded-xl border border-stone-800 flex flex-col md:flex-row items-center justify-between gap-3 shadow-sm">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+              <input
+                type="text"
+                placeholder="Search by student name, receipt #, or package..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-stone-950 border border-stone-700 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-stone-400 focus:outline-none focus:border-red-500"
+              />
             </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleExportCSV}
-            className="px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border border-stone-700 transition-colors"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
-          </button>
+            <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+              {/* Date Filter */}
+              <div className="flex items-center gap-1.5 flex-1 md:flex-initial">
+                <span className="text-[11px] text-stone-400 whitespace-nowrap">Period:</span>
+                <select
+                  value={dateRangeFilter}
+                  onChange={(e) => setDateRangeFilter(e.target.value as any)}
+                  className="bg-stone-950 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-red-500 w-full md:w-auto"
+                >
+                  <option value="ALL">All Time</option>
+                  <option value="THIS_MONTH">This Month</option>
+                  <option value="LAST_30_DAYS">Last 30 Days</option>
+                </select>
+              </div>
 
-          <button
-            onClick={onOpenPayment}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-xs"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>+ Record New Payment</span>
-          </button>
-        </div>
-      </div>
+              {/* Method Filter */}
+              <div className="flex items-center gap-1.5 flex-1 md:flex-initial">
+                <span className="text-[11px] text-stone-400 whitespace-nowrap">Method:</span>
+                <select
+                  value={methodFilter}
+                  onChange={(e) => setMethodFilter(e.target.value)}
+                  className="bg-stone-950 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-red-500 w-full md:w-auto font-medium"
+                >
+                  <option value="ALL">All Methods</option>
+                  <option value="Credit Card">Credit Card</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Cliq">Cliq</option>
+                </select>
+              </div>
 
-      {/* Financial Highlight Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Card 1: Collected This Month */}
-        <div className="p-4 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
-              Collected This Month
-            </span>
-            <div className="text-2xl font-black text-emerald-400 mt-1 font-mono-digits">
-              {formatCurrency(totalThisMonth, 'JOD')}
-            </div>
-            <div className="text-xs text-stone-400 mt-0.5">
-              {thisMonthPayments.length} transactions in {now.toLocaleString('default', { month: 'short' })}
-            </div>
-          </div>
-          <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-800/80 text-emerald-400">
-            <TrendingUp className="w-6 h-6" />
-          </div>
-        </div>
+              {/* Date & Time Sort Order Selector */}
+              <div className="flex items-center gap-1.5 flex-1 md:flex-initial">
+                <ArrowUpDown className="w-3.5 h-3.5 text-stone-400" />
+                <span className="text-[11px] text-stone-400 whitespace-nowrap">Sort:</span>
+                <select
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value as any)}
+                  className="bg-stone-950 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-red-500 w-full md:w-auto font-semibold"
+                >
+                  <option value="DATETIME_DESC">Date & Time: Newest</option>
+                  <option value="DATETIME_ASC">Date & Time: Oldest</option>
+                  <option value="AMOUNT_DESC">Amount: High to Low</option>
+                  <option value="AMOUNT_ASC">Amount: Low to High</option>
+                </select>
+              </div>
 
-        {/* Card 2: Total Revenue All-Time */}
-        <div className="p-4 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
-              Total Recorded Revenue
-            </span>
-            <div className="text-2xl font-black text-white mt-1 font-mono-digits">
-              {formatCurrency(totalAllTime, 'JOD')}
-            </div>
-            <div className="text-xs text-stone-400 mt-0.5">
-              {payments.length} total payments logged
-            </div>
-          </div>
-          <div className="p-3 rounded-xl bg-stone-800 text-stone-300">
-            <DollarSign className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Card 3: Average Payment */}
-        <div className="p-4 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
-              Average Transaction
-            </span>
-            <div className="text-2xl font-black text-blue-400 mt-1 font-mono-digits">
-              {formatCurrency(averagePayment, 'JOD')}
-            </div>
-            <div className="text-xs text-stone-400 mt-0.5">
-              Average renewal or registration
+              {/* Export CSV Button */}
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="px-3.5 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 border border-stone-700 transition-colors cursor-pointer shadow-xs shrink-0 active:scale-95"
+                title="Export filtered records to CSV"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export CSV</span>
+              </button>
             </div>
           </div>
-          <div className="p-3 rounded-xl bg-blue-950/60 border border-blue-800/80 text-blue-400">
-            <Wallet className="w-6 h-6" />
-          </div>
-        </div>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="bg-stone-900 p-3.5 rounded-xl border border-stone-800 flex flex-col md:flex-row items-center gap-3">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-          <input
-            type="text"
-            placeholder="Search by student name, receipt #, or package..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-stone-950 border border-stone-700 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-stone-400 focus:outline-none focus:border-red-500"
-          />
-        </div>
-
-        {/* Date Filter */}
-        <div className="flex items-center gap-1.5 w-full md:w-auto">
-          <span className="text-[11px] text-stone-400 whitespace-nowrap">Period:</span>
-          <select
-            value={dateRangeFilter}
-            onChange={(e) => setDateRangeFilter(e.target.value as any)}
-            className="bg-stone-950 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-red-500 w-full md:w-auto"
-          >
-            <option value="ALL">All Time</option>
-            <option value="THIS_MONTH">This Month</option>
-            <option value="LAST_30_DAYS">Last 30 Days</option>
-          </select>
-        </div>
-
-        {/* Method Filter */}
-        <div className="flex items-center gap-1.5 w-full md:w-auto">
-          <span className="text-[11px] text-stone-400 whitespace-nowrap">Method:</span>
-          <select
-            value={methodFilter}
-            onChange={(e) => setMethodFilter(e.target.value)}
-            className="bg-stone-950 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-red-500 w-full md:w-auto font-medium"
-          >
-            <option value="ALL">All Methods</option>
-            <option value="Credit Card">Credit Card</option>
-            <option value="Cash">Cash</option>
-            <option value="Cliq">Cliq</option>
-          </select>
-        </div>
-
-        {/* Date & Time Sort Order Selector */}
-        <div className="flex items-center gap-1.5 w-full md:w-auto">
-          <ArrowUpDown className="w-3.5 h-3.5 text-amber-400" />
-          <span className="text-[11px] text-stone-400 whitespace-nowrap">Sort:</span>
-          <select
-            value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value as any)}
-            className="bg-stone-950 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-amber-500 w-full md:w-auto font-semibold"
-          >
-            <option value="DATETIME_DESC">Date & Time: Newest First</option>
-            <option value="DATETIME_ASC">Date & Time: Oldest First</option>
-            <option value="AMOUNT_DESC">Amount: High to Low</option>
-            <option value="AMOUNT_ASC">Amount: Low to High</option>
-          </select>
-        </div>
-      </div>
 
       {/* Payments Ledger Table */}
       <div className="bg-stone-900 rounded-xl border border-stone-800 overflow-hidden shadow-sm">
@@ -346,7 +274,28 @@ export const PaymentsLedgerView: React.FC<PaymentsLedgerViewProps> = ({
 
                       {/* Student */}
                       <td className="py-3.5 px-3">
-                        <div className="font-bold text-white">{pay.memberName}</div>
+                        <div className="font-bold text-white flex items-center gap-1.5 flex-wrap">
+                          <span>{pay.memberName}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyName(e, pay.memberName, `pay-${pay.id}`)}
+                            title={copiedStudentId === `pay-${pay.id}` ? 'Copied name to clipboard!' : `Copy "${pay.memberName}"`}
+                            className={`p-1 rounded-md transition-all inline-flex items-center gap-1 text-[11px] cursor-pointer active:scale-95 ${
+                              copiedStudentId === `pay-${pay.id}`
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
+                                : 'text-stone-400 hover:text-white hover:bg-stone-850 border border-transparent'
+                            }`}
+                          >
+                            {copiedStudentId === `pay-${pay.id}` ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-400" />
+                                <span className="font-mono text-[9px] font-bold">Copied</span>
+                              </>
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                          </button>
+                        </div>
                         {member && (
                           <div className="mt-0.5">
                             <BeltBadge belt={member.beltRank} stripes={member.stripes} size="sm" showLabel={false} />

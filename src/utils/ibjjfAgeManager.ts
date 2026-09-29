@@ -6,13 +6,31 @@ import { KIDS_BELT_RANKS, TEENS_BELT_RANKS, ADULT_BELT_RANKS } from './bjjBelts'
   */
 export function calculateStudentAge(birthDate?: string, refDateStr?: string): number {
   if (!birthDate) return 18; // Default fallback if no DOB
-  const birth = new Date(birthDate);
-  if (isNaN(birth.getTime())) return 18;
+  const parts = birthDate.split('-');
+  if (parts.length < 3) return 18;
+  const birthYear = parseInt(parts[0], 10);
+  const birthMonth = parseInt(parts[1], 10); // 1-12
+  const birthDay = parseInt(parts[2], 10);
+  if (isNaN(birthYear) || isNaN(birthMonth) || isNaN(birthDay)) return 18;
 
-  const refDate = refDateStr ? new Date(refDateStr) : new Date();
-  let age = refDate.getFullYear() - birth.getFullYear();
-  const monthDiff = refDate.getMonth() - birth.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && refDate.getDate() < birth.getDate())) {
+  let refYear: number;
+  let refMonth: number;
+  let refDay: number;
+
+  if (refDateStr && refDateStr.includes('-')) {
+    const refParts = refDateStr.split('-');
+    refYear = parseInt(refParts[0], 10);
+    refMonth = parseInt(refParts[1], 10);
+    refDay = parseInt(refParts[2], 10);
+  } else {
+    const now = new Date();
+    refYear = now.getFullYear();
+    refMonth = now.getMonth() + 1;
+    refDay = now.getDate();
+  }
+
+  let age = refYear - birthYear;
+  if (refMonth < birthMonth || (refMonth === birthMonth && refDay < birthDay)) {
     age--;
   }
   return Math.max(0, age);
@@ -24,10 +42,11 @@ export function calculateStudentAge(birthDate?: string, refDateStr?: string): nu
  */
 export function calculateIBJJFCompetitionAge(birthDate?: string, refYear?: number): number {
   if (!birthDate) return 18;
-  const birth = new Date(birthDate);
-  if (isNaN(birth.getTime())) return 18;
+  const parts = birthDate.split('-');
+  const birthYear = parseInt(parts[0], 10);
+  if (isNaN(birthYear)) return 18;
   const currentYear = refYear || new Date().getFullYear();
-  return Math.max(0, currentYear - birth.getFullYear());
+  return Math.max(0, currentYear - birthYear);
 }
 
 /**
