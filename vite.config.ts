@@ -15,7 +15,7 @@ const currentDir = typeof import.meta.dirname !== 'undefined'
  */
 function localDatabaseBridgePlugin(): Plugin {
   const middlewareHandler = (req: any, res: any, next: any) => {
-    if (!req.url?.startsWith('/api/database/')) {
+    if (!req.url?.startsWith('/api/database/') && !req.url?.startsWith('/api/system/')) {
       return next();
     }
 
@@ -111,6 +111,25 @@ function localDatabaseBridgePlugin(): Plugin {
       return;
     }
 
+    // 4. System Live GitHub Update & Hot Deployment Endpoint
+    if (url.pathname === '/api/system/deploy-update' && req.method === 'POST') {
+      (async () => {
+        try {
+          const body = await readJsonBody(req);
+          const { deployUpdateOnServer } = await import('./src/server/updateService.ts');
+          const result = await deployUpdateOnServer(body);
+          res.statusCode = result.success ? 200 : 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(result));
+        } catch (deployErr: any) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ success: false, error: deployErr.message }));
+        }
+      })();
+      return;
+    }
+
     next();
   };
 
@@ -139,7 +158,27 @@ export default defineConfig(() => {
       strictPort: true,
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       hmr: process.env.DISABLE_HMR !== 'true',
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      watch: process.env.DISABLE_HMR === 'true' ? null : {
+        ignored: [
+          '**/public/**',
+          '**/src/data/**',
+          '**/database/**',
+          '**/version/**',
+          '**/*.db*',
+          '**/*.sqlite*',
+          '**/*.json',
+          '**/*.sql',
+          '**/*.log',
+          '**/.git/**',
+          /[\\/]public[\\/]/,
+          /[\\/]database[\\/]/,
+          /[\\/]src[\\/]data[\\/]/,
+          /[\\/]version[\\/]/,
+          /\.json$/,
+          /\.db(-.*)?$/,
+          /\.sqlite(-.*)?$/,
+        ],
+      },
     },
   };
 });

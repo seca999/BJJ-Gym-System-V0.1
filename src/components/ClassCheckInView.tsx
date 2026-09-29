@@ -49,7 +49,7 @@ import { BeltBadge, checkStudentClassEligibility, ClassEligibilityCheck } from '
 import { EditClassModal } from './EditClassModal';
 import { MatVisionAttendanceModal } from './MatVisionAttendanceModal';
 import { getMatboardClassesForDay, resolveTimetableDay, TIMETABLE_DAY_TO_FULL } from '../utils/matboardSchedule';
-import { parseTimeToMinutes, getJordanCurrentMinutes } from '../utils/timeUtils';
+import { parseTimeToMinutes, parseSlotStartMinutes, parseSlotEndMinutes, getJordanCurrentMinutes } from '../utils/timeUtils';
 import {
   GymWeek,
   GymDayInfo,
@@ -754,11 +754,9 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
   // Check live session status for today's classes
   const getSessionStatus = (timeStr: string) => {
     if (!timeStr) return { status: 'SCHEDULED', label: 'Scheduled', badgeClass: 'bg-stone-800 text-stone-300' };
-    const parts = timeStr.split('-').map((s) => s.trim());
-    if (parts.length === 0) return { status: 'SCHEDULED', label: 'Scheduled', badgeClass: 'bg-stone-800 text-stone-300' };
 
-    const startMinutes = parseTimeToMinutes(parts[0]);
-    const endMinutes = parts.length > 1 ? parseTimeToMinutes(parts[1]) : startMinutes + 60;
+    const startMinutes = parseSlotStartMinutes(timeStr);
+    const endMinutes = parseSlotEndMinutes(timeStr);
     const { totalMinutes: currentMinutes } = getJordanCurrentMinutes(currentTime);
 
     if (currentMinutes >= startMinutes && currentMinutes <= endMinutes) {

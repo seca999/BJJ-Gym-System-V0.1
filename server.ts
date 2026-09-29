@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { inspectLocalDatabase, buildOrRepairLocalDatabase, readLocalDatabase } from './src/server/localDbService';
+import { deployUpdateOnServer } from './src/server/updateService';
 
 const currentDir = typeof __dirname !== 'undefined'
   ? __dirname
@@ -55,6 +56,16 @@ app.all('/api/database/read', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. System Live GitHub Update & Hot Deployment Endpoint
+app.post('/api/system/deploy-update', async (req, res) => {
+  try {
+    const result = await deployUpdateOnServer(req.body || {});
+    res.status(result.success ? 200 : 500).json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

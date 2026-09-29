@@ -26,7 +26,9 @@ import { ActiveTab } from './Navbar';
 import { BeltBadge } from '../utils/bjjBelts';
 import { getMatboardClassesForDay, resolveTimetableDay, TIMETABLE_DAY_TO_FULL } from '../utils/matboardSchedule';
 import { 
-  parseTimeToMinutes, 
+  parseTimeToMinutes,
+  parseSlotStartMinutes,
+  parseSlotEndMinutes,
   getJordanDateStr, 
   getJordanTime12Str, 
   formatJordanDate, 
@@ -139,11 +141,9 @@ export const HomeWelcomingView: React.FC<HomeWelcomingViewProps> = ({
   // Check session status (IN_SESSION, UPCOMING, COMPLETED) according to Jordan Amman time
   const getSessionStatus = (timeStr: string) => {
     if (!timeStr) return { status: 'SCHEDULED', label: 'Scheduled', badgeClass: 'bg-stone-800 text-stone-300' };
-    const parts = timeStr.split('-').map((s) => s.trim());
-    if (parts.length === 0) return { status: 'SCHEDULED', label: 'Scheduled', badgeClass: 'bg-stone-800 text-stone-300' };
 
-    const startMinutes = parseTimeToMinutes(parts[0]);
-    const endMinutes = parts.length > 1 ? parseTimeToMinutes(parts[1]) : startMinutes + 60;
+    const startMinutes = parseSlotStartMinutes(timeStr);
+    const endMinutes = parseSlotEndMinutes(timeStr);
     const { totalMinutes: currentMinutes } = getJordanCurrentMinutes(currentTime);
 
     if (currentMinutes >= startMinutes && currentMinutes <= endMinutes) {

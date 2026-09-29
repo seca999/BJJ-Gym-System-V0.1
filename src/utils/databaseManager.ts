@@ -993,35 +993,35 @@ export async function restoreDataFromDiskDatabase(customPath?: string): Promise<
       const data = await res.json();
       let count = 0;
       if (Array.isArray(data.members)) {
-        saveMembers(data.members);
+        saveMembers(data.members, false);
         count += data.members.length;
       }
       if (Array.isArray(data.classes)) {
-        saveClasses(data.classes);
+        saveClasses(data.classes, false);
         count += data.classes.length;
       }
       if (Array.isArray(data.attendance)) {
-        saveAttendance(data.attendance);
+        saveAttendance(data.attendance, false);
         count += data.attendance.length;
       }
       if (Array.isArray(data.payments)) {
-        savePayments(data.payments);
+        savePayments(data.payments, false);
         count += data.payments.length;
       }
       if (Array.isArray(data.coaches)) {
-        saveCoaches(data.coaches);
+        saveCoaches(data.coaches, false);
         count += data.coaches.length;
       }
       if (Array.isArray(data.subscriptionPlans)) {
-        saveSubscriptionPlans(data.subscriptionPlans);
+        saveSubscriptionPlans(data.subscriptionPlans, false);
         count += data.subscriptionPlans.length;
       }
       if (data.timetableConfig) {
-        saveTimetableConfig(data.timetableConfig);
+        saveTimetableConfig(data.timetableConfig, false);
         count++;
       }
       if (data.settings) {
-        saveSettings(data.settings);
+        saveSettings(data.settings, false);
         count++;
       }
       if (Array.isArray(data.ibjjfTransfers)) {

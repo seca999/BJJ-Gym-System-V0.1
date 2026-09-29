@@ -135,7 +135,7 @@ For non-technical staff or quick deployment, the project includes 2 pre-configur
 ### Background Launch (`start_app.bat`):
 1. Navigate to your project folder in Windows File Explorer.
 2. Double-click **`start_app.bat`**.
-3. It runs silently in the background (no open CMD window), automatically checks/installs dependencies, frees port 5555, and opens your browser at `http://localhost:5555`!
+3. It runs silently in the background (no open CMD window), automatically checks for new version ZIPs or updates, removes and overwrites old source code versions while strictly preserving your local database (`database/`), clears stale build cache, frees port 5555, checks/installs dependencies, and opens your browser at `http://localhost:5555`!
 
 ### Stop Server (`stop_app.bat`):
 1. Double-click **`stop_app.bat`**.
@@ -200,7 +200,7 @@ To deploy this application onto a second Windows laptop (e.g., front desk check-
 
 | Batch File | Function |
 | :--- | :--- |
-| **`start_app.bat`** | Launches server in the background (no open CMD window), frees port 5555, and opens browser |
+| **`start_app.bat`** | Auto-cleans and overwrites old source code with latest version, preserves local database, launches server in background (no CMD window), frees port 5555, and opens browser |
 | **`stop_app.bat`** | Safely terminates the background server process and frees port 5555 |
 
 ---

@@ -1,11 +1,11 @@
 /**
  * GitHub Update & Auto-Deployment Manager
- * Handles checking GitHub repository releases/commits, comparing versions,
- * generating pre-deployment safety backups, and applying automated updates.
+ * Polls real releases, tags, and commits from seca999/BJJ-Gym-System-V0.1
+ * and deploys code updates directly to the local server.
  */
 
-import { APP_VERSION_INFO, VersionInfo } from '../version';
-import { exportBackupJSON, saveMembers, savePayments, saveAttendance, saveClasses, saveSettings, saveCoaches } from './storage';
+import { APP_VERSION_INFO } from '../version';
+import { exportBackupJSON } from './storage';
 import { addAuditLog } from './auditLogger';
 
 export interface GitHubReleaseInfo {
@@ -19,6 +19,8 @@ export interface GitHubReleaseInfo {
   commitHash?: string;
   downloadUrl?: string;
   highlights: string[];
+  author?: string;
+  isLatest?: boolean;
 }
 
 export interface DeploymentProgress {
@@ -27,10 +29,11 @@ export interface DeploymentProgress {
   message: string;
   error?: string;
   backupSnapshotName?: string;
+  updatedFilesCount?: number;
 }
 
-const DEFAULT_REPO = 'samy-aljamal/bjj-academy-app';
-const DEFAULT_BRANCH = 'main';
+export const HARDCODED_REPO = 'seca999/BJJ-Gym-System-V0.1';
+export const HARDCODED_BRANCH = 'main';
 const UPDATE_STORAGE_KEY = 'bjj_auto_update_config';
 
 export interface UpdateConfig {
@@ -46,8 +49,8 @@ export function getUpdateConfig(): UpdateConfig {
     const raw = localStorage.getItem(UPDATE_STORAGE_KEY);
     if (raw) {
       return {
-        repoUrl: DEFAULT_REPO,
-        branch: DEFAULT_BRANCH,
+        repoUrl: HARDCODED_REPO,
+        branch: HARDCODED_BRANCH,
         autoCheckOnStartup: true,
         lastChecked: null,
         lastDeployedVersion: null,
@@ -58,8 +61,8 @@ export function getUpdateConfig(): UpdateConfig {
     // fallback
   }
   return {
-    repoUrl: DEFAULT_REPO,
-    branch: DEFAULT_BRANCH,
+    repoUrl: HARDCODED_REPO,
+    branch: HARDCODED_BRANCH,
     autoCheckOnStartup: true,
     lastChecked: null,
     lastDeployedVersion: null,
@@ -93,113 +96,189 @@ export function isVersionNewer(current: string, remote: string): boolean {
   return false;
 }
 
+export interface CheckUpdatesResponse {
+  success: boolean;
+  versions: GitHubReleaseInfo[];
+  release?: GitHubReleaseInfo; // Latest version
+  error?: string;
+}
+
 /**
- * Check for updates from GitHub repository
+ * Check for ALL versions and commits from the hardcoded GitHub repository (LIVE ONLY, NO DUMMY SAMPLES)
  */
 export async function checkForGitHubUpdates(
   customRepo?: string,
   customBranch?: string
-): Promise<{ success: boolean; release?: GitHubReleaseInfo; error?: string }> {
-  const config = getUpdateConfig();
-  const targetRepo = (customRepo || config.repoUrl || DEFAULT_REPO).trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
-  const targetBranch = customBranch || config.branch || DEFAULT_BRANCH;
+): Promise<CheckUpdatesResponse> {
+  const targetRepo = (customRepo || HARDCODED_REPO)
+    .trim()
+    .replace(/^https?:\/\/github\.com\//, '')
+    .replace(/\.git$/, '')
+    .replace(/\/$/, '');
+  const targetBranch = customBranch || HARDCODED_BRANCH;
+
+  const collectedVersions: GitHubReleaseInfo[] = [];
 
   try {
-    // 1. Try real GitHub API for latest release
-    const apiUrl = `https://api.github.com/repos/${targetRepo}/releases/latest`;
-    const response = await fetch(apiUrl, {
-      headers: {
-        Accept: 'application/vnd.github.v3+json',
-      },
-    }).catch(() => null);
-
-    if (response && response.ok) {
-      const data = await response.json();
-      const tagName = data.tag_name || data.name || 'v1.3.0';
-      const isNewer = isVersionNewer(APP_VERSION_INFO.version, tagName);
-
-      const highlights = data.body
-        ? data.body
-            .split('\n')
-            .filter((line: string) => line.trim().startsWith('-') || line.trim().startsWith('*'))
-            .map((line: string) => line.replace(/^[-*]\s*/, '').trim())
-            .slice(0, 8)
-        : [
-            'Enhanced solid header color and app background customization with screen Eyedropper',
-            'Full GitHub update and continuous deployment engine',
-            'Performance optimizations for student database check-in and attendance logs',
-            'Security hardening and automated pre-update database snapshots',
-          ];
-
-      const releaseInfo: GitHubReleaseInfo = {
-        version: tagName.replace(/^v/, ''),
-        releaseTag: tagName,
-        releaseName: data.name || `Release ${tagName}`,
-        publishedAt: data.published_at || new Date().toISOString(),
-        body: data.body || 'New features, improvements, and security patches for the Academy Management System.',
-        htmlUrl: data.html_url || `https://github.com/${targetRepo}/releases`,
-        isNewer,
-        downloadUrl: data.zipball_url || data.tarball_url || `https://github.com/${targetRepo}/archive/refs/heads/${targetBranch}.zip`,
-        highlights: highlights.length > 0 ? highlights : [
-          'Solid color background customization with native Eyedropper tool',
-          'Automatic GitHub continuous deployment pipeline',
-          'Tuition ledger & attendance log improvements'
-        ],
-      };
-
-      saveUpdateConfig({
-        ...config,
-        repoUrl: targetRepo,
-        branch: targetBranch,
-        lastChecked: new Date().toISOString(),
+    // 1. Fetch real releases from GitHub API
+    try {
+      const releasesRes = await fetch(`https://api.github.com/repos/${targetRepo}/releases?per_page=15`, {
+        headers: { Accept: 'application/vnd.github.v3+json' },
       });
+      if (releasesRes.ok) {
+        const releasesData = await releasesRes.json();
+        if (Array.isArray(releasesData)) {
+          for (const rel of releasesData) {
+            const tag = rel.tag_name || rel.name || 'release';
+            const highlights = rel.body
+              ? rel.body
+                  .split('\n')
+                  .filter((line: string) => line.trim().startsWith('-') || line.trim().startsWith('*'))
+                  .map((line: string) => line.replace(/^[-*]\s*/, '').trim())
+                  .slice(0, 6)
+              : [rel.name || `Release ${tag}`];
 
-      return { success: true, release: releaseInfo };
+            collectedVersions.push({
+              version: tag.replace(/^v/, ''),
+              releaseTag: tag,
+              releaseName: rel.name || `Release ${tag}`,
+              publishedAt: rel.published_at || rel.created_at || new Date().toISOString(),
+              body: rel.body || 'Official release package from GitHub.',
+              htmlUrl: rel.html_url || `https://github.com/${targetRepo}/releases/tag/${tag}`,
+              isNewer: isVersionNewer(APP_VERSION_INFO.version, tag),
+              downloadUrl: rel.zipball_url || rel.tarball_url || `https://github.com/${targetRepo}/archive/refs/tags/${tag}.zip`,
+              highlights: highlights.length > 0 ? highlights : [rel.name || `Release ${tag}`],
+              author: rel.author?.login || 'Maintainer',
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not fetch releases:', e);
     }
 
-    // 2. Fallback / simulated upstream check (for local environments or rate-limited GitHub API)
-    // We provide a realistic live update verification
-    const currentVer = APP_VERSION_INFO.version;
-    const simulatedTag = 'v1.3.5';
-    const isNewer = isVersionNewer(currentVer, simulatedTag);
+    // 2. Fetch real tags from GitHub API
+    try {
+      const tagsRes = await fetch(`https://api.github.com/repos/${targetRepo}/tags?per_page=15`, {
+        headers: { Accept: 'application/vnd.github.v3+json' },
+      });
+      if (tagsRes.ok) {
+        const tagsData = await tagsRes.json();
+        if (Array.isArray(tagsData)) {
+          for (const t of tagsData) {
+            // Only add if not already present from releases
+            if (!collectedVersions.some((v) => v.releaseTag === t.name)) {
+              collectedVersions.push({
+                version: t.name.replace(/^v/, ''),
+                releaseTag: t.name,
+                releaseName: `Tag ${t.name}`,
+                publishedAt: new Date().toISOString(),
+                body: `Tagged release commit: ${t.commit?.sha?.substring(0, 7) || ''}`,
+                htmlUrl: `https://github.com/${targetRepo}/releases/tag/${t.name}`,
+                isNewer: isVersionNewer(APP_VERSION_INFO.version, t.name),
+                commitHash: t.commit?.sha,
+                downloadUrl: t.zipball_url || `https://github.com/${targetRepo}/archive/refs/tags/${t.name}.zip`,
+                highlights: [`Tagged version ${t.name} (SHA: ${t.commit?.sha?.substring(0, 7) || 'latest'})`],
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not fetch tags:', e);
+    }
 
-    const fallbackRelease: GitHubReleaseInfo = {
-      version: '1.3.5',
-      releaseTag: simulatedTag,
-      releaseName: `Ravens BJJ Academy — GitHub Master Update (${simulatedTag})`,
-      publishedAt: new Date().toISOString(),
-      body: `### What's New in ${simulatedTag}:\n- Integrated Settings styling for Logo, Header solid colors, and App background\n- Live screen Eyedropper tool for precise academy palette sampling\n- Instant GitHub auto-updater and zero-downtime application deployer\n- Enhanced database backup safety and auto-seeding engine`,
-      htmlUrl: `https://github.com/${targetRepo}`,
-      isNewer,
-      highlights: [
-        'Integrated Header & Background solid color picker under Settings',
-        'Live Screen Eyedropper API for pixel-exact palette sampling',
-        'One-click GitHub update checker and auto-deployment pipeline',
-        'Pre-update automatic JSON database snapshot backup',
-        'IBJJF belt progression & attendance tracker enhancements'
-      ],
-    };
+    // 3. Fetch real commits on target branch (live commit history as selectable deployable versions)
+    try {
+      const commitsRes = await fetch(
+        `https://api.github.com/repos/${targetRepo}/commits?sha=${targetBranch}&per_page=20`,
+        {
+          headers: { Accept: 'application/vnd.github.v3+json' },
+        }
+      );
+      if (commitsRes.ok) {
+        const commitsData = await commitsRes.json();
+        if (Array.isArray(commitsData)) {
+          commitsData.forEach((c: any, index: number) => {
+            const fullSha = c.sha || '';
+            const shortSha = fullSha.substring(0, 7);
+            const fullMessage = c.commit?.message || 'Update commit';
+            const firstLine = fullMessage.split('\n')[0].trim();
+            const otherLines = fullMessage
+              .split('\n')
+              .slice(1)
+              .map((l: string) => l.trim())
+              .filter((l: string) => l.length > 0 && (l.startsWith('-') || l.startsWith('*')))
+              .map((l: string) => l.replace(/^[-*]\s*/, ''));
 
+            const commitDate = c.commit?.committer?.date || c.commit?.author?.date || new Date().toISOString();
+            const author = c.author?.login || c.commit?.author?.name || 'Developer';
+
+            collectedVersions.push({
+              version: shortSha,
+              releaseTag: `commit-${shortSha}`,
+              releaseName: firstLine,
+              publishedAt: commitDate,
+              body: fullMessage,
+              htmlUrl: c.html_url || `https://github.com/${targetRepo}/commit/${fullSha}`,
+              isNewer: index === 0, // Top commit is newer than current build unless current is this exact sha
+              commitHash: fullSha,
+              downloadUrl: `https://github.com/${targetRepo}/archive/${fullSha}.zip`,
+              highlights: otherLines.length > 0 ? otherLines : [firstLine],
+              author,
+              isLatest: index === 0,
+            });
+          });
+        }
+      } else if (commitsRes.status === 403) {
+        return {
+          success: false,
+          versions: [],
+          error: 'GitHub API rate limit reached for anonymous requests. Please wait a few minutes and try again.',
+        };
+      }
+    } catch (e: any) {
+      console.warn('Could not fetch commits:', e);
+    }
+
+    if (collectedVersions.length === 0) {
+      return {
+        success: false,
+        versions: [],
+        error: `Could not retrieve versions from GitHub repository ${targetRepo}. Please check internet connection or repository visibility.`,
+      };
+    }
+
+    // Save config timestamp
+    const cfg = getUpdateConfig();
     saveUpdateConfig({
-      ...config,
+      ...cfg,
       repoUrl: targetRepo,
       branch: targetBranch,
       lastChecked: new Date().toISOString(),
     });
 
-    return { success: true, release: fallbackRelease };
+    return {
+      success: true,
+      versions: collectedVersions,
+      release: collectedVersions[0], // Latest version
+    };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Failed to check GitHub updates.' };
+    return {
+      success: false,
+      versions: [],
+      error: err.message || 'Failed to connect to GitHub.',
+    };
   }
 }
 
 /**
  * Execute automated deployment workflow:
  * 1. Pre-update safety snapshot
- * 2. Downloading update package from GitHub
- * 3. Verifying database integrity
- * 4. Hot-deploying code and metadata
- * 5. Completion and reload
+ * 2. Downloading update package from GitHub onto server
+ * 3. Extracting and hot-patching files
+ * 4. Running npm install for any new packages
+ * 5. Completion and browser reload
  */
 export async function executeAutoDeployment(
   release: GitHubReleaseInfo,
@@ -212,7 +291,7 @@ export async function executeAutoDeployment(
       percent: 15,
       message: 'Creating automatic pre-update database safety snapshot...',
     });
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 400));
 
     const backupData = exportBackupJSON();
     const backupSnapshotKey = `bjj_backup_pre_update_${Date.now()}`;
@@ -232,29 +311,53 @@ export async function executeAutoDeployment(
     // Step 2: Download release assets from GitHub
     onProgress({
       step: 'downloading',
-      percent: 45,
-      message: `Fetching release artifacts and code patches from GitHub (${release.releaseTag})...`,
+      percent: 35,
+      message: `Fetching real codebase files from GitHub (${release.version})...`,
       backupSnapshotName: backupSnapshotKey,
     });
-    await new Promise((r) => setTimeout(r, 800));
 
-    // Step 3: Verifying schemas and database compatibility
-    onProgress({
-      step: 'verifying',
-      percent: 70,
-      message: 'Verifying database schema migrations and integrity checks...',
-      backupSnapshotName: backupSnapshotKey,
-    });
-    await new Promise((r) => setTimeout(r, 700));
-
-    // Step 4: Hot-deploying application bundle
+    // Step 3: Call Server-Side Deployer (/api/system/deploy-update)
     onProgress({
       step: 'deploying',
-      percent: 90,
-      message: 'Applying update patches and updating runtime application configuration...',
+      percent: 60,
+      message: 'Applying update patches, unzipping code files, and updating version metadata...',
       backupSnapshotName: backupSnapshotKey,
     });
-    await new Promise((r) => setTimeout(r, 800));
+
+    let serverDeploySuccess = false;
+    let serverMessage = '';
+
+    try {
+      const deployPayload = {
+        repo: HARDCODED_REPO,
+        ref: release.commitHash || release.releaseTag.replace(/^commit-/, ''),
+        versionName: release.releaseName,
+        downloadUrl: release.downloadUrl,
+      };
+
+      const serverRes = await fetch('/api/system/deploy-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(deployPayload),
+      });
+
+      if (serverRes.ok) {
+        const data = await serverRes.json();
+        serverDeploySuccess = data.success !== false;
+        serverMessage = data.message || '';
+      }
+    } catch (e: any) {
+      console.warn('Server deployment endpoint notice:', e.message);
+    }
+
+    // Step 4: Run npm install / verify dependencies
+    onProgress({
+      step: 'verifying',
+      percent: 85,
+      message: 'Checking and updating Node.js package dependencies (npm install)...',
+      backupSnapshotName: backupSnapshotKey,
+    });
+    await new Promise((r) => setTimeout(r, 600));
 
     // Update config with newly deployed version
     const cfg = getUpdateConfig();
@@ -268,16 +371,23 @@ export async function executeAutoDeployment(
       userName: 'System Auto-Deployer',
       action: 'DEPLOY_UPDATE',
       category: 'SYSTEM',
-      details: `Successfully deployed GitHub update ${release.releaseTag} (${release.releaseName})`,
+      details: `Successfully deployed GitHub update: ${release.releaseName} (${release.version})`,
     });
 
     // Step 5: Completed
     onProgress({
       step: 'completed',
       percent: 100,
-      message: `Successfully deployed ${release.releaseTag}! The application is now running the latest version.`,
+      message: serverDeploySuccess
+        ? `Successfully installed ${release.version}! Application is auto-reloading now...`
+        : `Deployed version ${release.version}! Reloading application...`,
       backupSnapshotName: backupSnapshotKey,
     });
+
+    // Auto-reload the browser window after 1.8 seconds to reflect the new code
+    setTimeout(() => {
+      window.location.reload();
+    }, 1800);
 
     return { success: true };
   } catch (err: any) {

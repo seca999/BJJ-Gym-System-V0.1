@@ -244,11 +244,13 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
     cellTitle: string;
   } | null>(null);
 
+  const activeDragOpRef = useRef<typeof activeDragOp>(null);
   const isDraggingRef = useRef(false);
   const dragMovedRef = useRef(false);
   const dragEndTimeRef = useRef(0);
+  const rafIdRef = useRef<number | null>(null);
 
-  // Mouse move and up listeners for 5-minute top/bottom stretching & class moving
+  // High-performance smooth mouse move and up listeners for 5-minute top/bottom stretching & class moving
   React.useEffect(() => {
     if (!activeDragOp) return;
 
@@ -257,53 +259,74 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
     const lastSlotEndMins = parseSlotEndMinutes(lastSlot?.timeRange || '10:00 PM');
 
     const handleMouseMove = (e: MouseEvent) => {
-      const deltaY = e.clientY - activeDragOp.startY;
-      if (Math.abs(deltaY) > 3) {
+      e.preventDefault();
+      const op = activeDragOpRef.current;
+      if (!op) return;
+
+      const deltaY = e.clientY - op.startY;
+      if (Math.abs(deltaY) > 2) {
         dragMovedRef.current = true;
       }
-      // 58px per 30 minutes = ~1.933px per minute. Round to nearest 5-minute increment.
-      const pxPerMinute = 58 / 30;
-      const rawDeltaMins = deltaY / pxPerMinute;
-      const stepMins = Math.round(rawDeltaMins / 5) * 5;
 
-      if (activeDragOp.mode === 'resize-start') {
-        // Dragging top handle: moving UP (negative deltaY) makes start time earlier, moving DOWN makes start time later
-        let newStart = activeDragOp.initialStartMins + stepMins;
-        newStart = Math.max(firstSlotStartMins, Math.min(activeDragOp.initialEndMins - 15, newStart));
-        newStart = Math.round(newStart / 5) * 5;
-
-        setActiveDragOp((prev) =>
-          prev ? { ...prev, currentStartMins: newStart } : prev
-        );
-      } else if (activeDragOp.mode === 'resize-end') {
-        // Dragging bottom handle: moving DOWN (positive deltaY) makes end time later, moving UP makes end time earlier
-        let newEnd = activeDragOp.initialEndMins + stepMins;
-        newEnd = Math.min(lastSlotEndMins, Math.max(activeDragOp.initialStartMins + 15, newEnd));
-        newEnd = Math.round(newEnd / 5) * 5;
-
-        setActiveDragOp((prev) =>
-          prev ? { ...prev, currentEndMins: newEnd } : prev
-        );
-      } else if (activeDragOp.mode === 'move') {
-        // Dragging entire class card: shift both start and end time together
-        const duration = activeDragOp.initialEndMins - activeDragOp.initialStartMins;
-        let newStart = activeDragOp.initialStartMins + stepMins;
-        newStart = Math.max(firstSlotStartMins, Math.min(lastSlotEndMins - duration, newStart));
-        newStart = Math.round(newStart / 5) * 5;
-        const newEnd = newStart + duration;
-
-        setActiveDragOp((prev) =>
-          prev ? { ...prev, currentStartMins: newStart, currentEndMins: newEnd } : prev
-        );
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
       }
+
+      rafIdRef.current = requestAnimationFrame(() => {
+        const currentOp = activeDragOpRef.current;
+        if (!currentOp) return;
+
+        // 58px per 30 minutes = ~1.933px per minute. Round to nearest 5-minute increment.
+        const pxPerMinute = 58 / 30;
+        const rawDeltaMins = deltaY / pxPerMinute;
+        const stepMins = Math.round(rawDeltaMins / 5) * 5;
+
+        let newStart = currentOp.currentStartMins;
+        let newEnd = currentOp.currentEndMins;
+
+        if (currentOp.mode === 'resize-start') {
+          // Dragging top handle: moving UP (negative deltaY) makes start time earlier, moving DOWN makes start time later
+          newStart = currentOp.initialStartMins + stepMins;
+          newStart = Math.max(firstSlotStartMins, Math.min(currentOp.initialEndMins - 15, newStart));
+          newStart = Math.round(newStart / 5) * 5;
+        } else if (currentOp.mode === 'resize-end') {
+          // Dragging bottom handle: moving DOWN (positive deltaY) makes end time later, moving UP makes end time earlier
+          newEnd = currentOp.initialEndMins + stepMins;
+          newEnd = Math.min(lastSlotEndMins, Math.max(currentOp.initialStartMins + 15, newEnd));
+          newEnd = Math.round(newEnd / 5) * 5;
+        } else if (currentOp.mode === 'move') {
+          // Dragging entire class card: shift both start and end time together
+          const duration = currentOp.initialEndMins - currentOp.initialStartMins;
+          newStart = currentOp.initialStartMins + stepMins;
+          newStart = Math.max(firstSlotStartMins, Math.min(lastSlotEndMins - duration, newStart));
+          newStart = Math.round(newStart / 5) * 5;
+          newEnd = newStart + duration;
+        }
+
+        // Only trigger React state update if minute intervals actually changed
+        if (newStart !== currentOp.currentStartMins || newEnd !== currentOp.currentEndMins) {
+          currentOp.currentStartMins = newStart;
+          currentOp.currentEndMins = newEnd;
+          setActiveDragOp({ ...currentOp });
+        }
+      });
     };
 
     const handleMouseUp = () => {
-      if (!activeDragOp) return;
-      const { cellId, currentStartMins, currentEndMins } = activeDragOp;
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      const op = activeDragOpRef.current;
+      if (!op) return;
+
+      const { cellId, currentStartMins, currentEndMins } = op;
       const hasChanged =
-        currentStartMins !== activeDragOp.initialStartMins ||
-        currentEndMins !== activeDragOp.initialEndMins;
+        currentStartMins !== op.initialStartMins ||
+        currentEndMins !== op.initialEndMins;
 
       dragEndTimeRef.current = Date.now();
       isDraggingRef.current = false;
@@ -347,17 +370,23 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
         });
       }
 
+      activeDragOpRef.current = null;
       setActiveDragOp(null);
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousemove', handleMouseMove, { passive: false });
     window.addEventListener('mouseup', handleMouseUp);
 
     return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [activeDragOp, config, onUpdateConfig]);
+  }, [activeDragOp !== null, config, onUpdateConfig]);
 
   // Start drag operation from Top handle, Bottom handle, or Card body
   const handleStartDrag = (
@@ -379,7 +408,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
     const startMins = parseTimeToMinutes(start);
     const endMins = parseTimeToMinutes(end);
 
-    setActiveDragOp({
+    const dragOp = {
       cellId: cell.id,
       day,
       slotIdx,
@@ -390,7 +419,13 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
       currentStartMins: startMins,
       currentEndMins: endMins,
       cellTitle: cell.title,
-    });
+    };
+
+    activeDragOpRef.current = dragOp;
+    setActiveDragOp(dragOp);
+
+    document.body.style.cursor = mode === 'move' ? 'grabbing' : 'ns-resize';
+    document.body.style.userSelect = 'none';
   };
 
   // Quick 5-minute incremental adjustments on Start (top) or End (bottom)

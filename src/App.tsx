@@ -209,7 +209,7 @@ export default function App() {
     const { updatedMembers, transferEvents } = evaluateAndAutoTransferMembers(loadedRawMembers);
     processAutomatedRenewalReminders(updatedMembers);
     if (transferEvents.length > 0) {
-      saveMembers(updatedMembers);
+      saveMembers(updatedMembers, false);
       setMembers(updatedMembers);
       setTransferNotifications(transferEvents);
     } else {
@@ -227,22 +227,26 @@ export default function App() {
     setSales(loadMerchSales());
 
     // Silent startup sync from disk SQLite DB to ensure file-based changes (e.g. deletions) are reflected
-    restoreDataFromDiskDatabase().then((res) => {
-      if (res.success) {
-        const freshMembers = loadMembers();
-        const { updatedMembers: currentMembers } = evaluateAndAutoTransferMembers(freshMembers);
-        setMembers(currentMembers);
-        setPayments(loadPayments());
-        setAttendance(loadAttendance());
-        setClasses(loadClasses());
-        setSettings(loadSettings());
-        setCoaches(loadCoaches());
-        setTimetableConfig(loadTimetableConfig());
-        setSubscriptionPlans(loadSubscriptionPlans());
-        setExpenses(loadExpenses());
-        setSales(loadMerchSales());
-      }
-    }).catch(() => {});
+    const restoredKey = 'bjj_restored_disk_session_v1';
+    if (!sessionStorage.getItem(restoredKey)) {
+      sessionStorage.setItem(restoredKey, 'true');
+      restoreDataFromDiskDatabase().then((res) => {
+        if (res.success && res.recordsLoaded && res.recordsLoaded > 0) {
+          const freshMembers = loadMembers();
+          const { updatedMembers: currentMembers } = evaluateAndAutoTransferMembers(freshMembers);
+          setMembers(currentMembers);
+          setPayments(loadPayments());
+          setAttendance(loadAttendance());
+          setClasses(loadClasses());
+          setSettings(loadSettings());
+          setCoaches(loadCoaches());
+          setTimetableConfig(loadTimetableConfig());
+          setSubscriptionPlans(loadSubscriptionPlans());
+          setExpenses(loadExpenses());
+          setSales(loadMerchSales());
+        }
+      }).catch(() => {});
+    }
   }, []);
 
   // Sync to local storage and verify IBJJF transitions

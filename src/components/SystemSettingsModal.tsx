@@ -57,7 +57,9 @@ import {
   saveUpdateConfig, 
   GitHubReleaseInfo, 
   DeploymentProgress, 
-  UpdateConfig 
+  UpdateConfig,
+  HARDCODED_REPO,
+  HARDCODED_BRANCH
 } from '../utils/updateManager';
 
 interface SystemSettingsModalProps {
@@ -227,10 +229,12 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
 
   // GitHub Updates & Deployment State
   const [updateConfig, setUpdateConfig] = useState<UpdateConfig>(() => getUpdateConfig());
-  const [customRepoInput, setCustomRepoInput] = useState(updateConfig.repoUrl);
-  const [customBranchInput, setCustomBranchInput] = useState(updateConfig.branch);
+  const [customRepoInput, setCustomRepoInput] = useState(HARDCODED_REPO);
+  const [customBranchInput, setCustomBranchInput] = useState(HARDCODED_BRANCH);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const [updateCheckResult, setUpdateCheckResult] = useState<{ checked: boolean; release?: GitHubReleaseInfo; error?: string } | null>(null);
+  const [availableVersions, setAvailableVersions] = useState<GitHubReleaseInfo[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState<GitHubReleaseInfo | null>(null);
   const [isDeployingUpdate, setIsDeployingUpdate] = useState(false);
   const [deploymentProgress, setDeploymentProgress] = useState<DeploymentProgress | null>(null);
 
@@ -432,12 +436,18 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   const handleCheckUpdates = async () => {
     setIsCheckingUpdates(true);
     setUpdateCheckResult(null);
+    setDeploymentProgress(null);
     try {
       const res = await checkForGitHubUpdates(customRepoInput, customBranchInput);
       setUpdateCheckResult({ checked: true, release: res.release, error: res.error });
-      if (res.release?.isNewer) {
-        setUserSuccess(`New version ${res.release.releaseTag} available!`);
+      if (res.versions && res.versions.length > 0) {
+        setAvailableVersions(res.versions);
+        setSelectedVersion(res.versions[0]);
+        setUserSuccess(`Discovered ${res.versions.length} live version(s) on GitHub!`);
         setTimeout(() => setUserSuccess(null), 4000);
+      } else if (res.error) {
+        setUserError(res.error);
+        setTimeout(() => setUserError(null), 5000);
       }
     } catch (err: any) {
       setUpdateCheckResult({ checked: true, error: err.message });
@@ -448,17 +458,15 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
 
   // Deploy Update action
   const handleDeployUpdate = async () => {
-    if (!updateCheckResult?.release) return;
+    const targetToDeploy = selectedVersion || updateCheckResult?.release;
+    if (!targetToDeploy) return;
     setIsDeployingUpdate(true);
     try {
-      const res = await executeAutoDeployment(updateCheckResult.release, (prog) => {
+      const res = await executeAutoDeployment(targetToDeploy, (prog) => {
         setDeploymentProgress(prog);
       });
       if (res.success) {
-        setUserSuccess(`Update ${updateCheckResult.release.releaseTag} deployed successfully!`);
-        setTimeout(() => {
-          window.location.reload();
-        }, 1800);
+        setUserSuccess(`Version ${targetToDeploy.version} installed! Application is reloading...`);
       }
     } catch (err: any) {
       setDeploymentProgress({
@@ -1619,10 +1627,10 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                   <div>
                     <h4 className="text-sm font-bold text-white flex items-center gap-2">
                       <GitPullRequest className="w-4 h-4 text-amber-400" />
-                      Remote Repository & Update Check
+                      Live GitHub Repository Updates
                     </h4>
                     <p className="text-xs text-stone-400">
-                      Check remote releases to detect new features, bug fixes, and deploy updates.
+                      Querying live releases, tags, and commits from <strong className="text-amber-400 font-mono">{HARDCODED_REPO}</strong> ({HARDCODED_BRANCH}).
                     </p>
                   </div>
 
@@ -1633,59 +1641,91 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                     className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-stone-950 font-black rounded-xl text-xs inline-flex items-center gap-2 shadow-lg transition-all cursor-pointer active:scale-95 shrink-0"
                   >
                     <RefreshCw className={`w-4 h-4 ${isCheckingUpdates ? 'animate-spin' : ''}`} />
-                    <span>{isCheckingUpdates ? 'Checking for updates...' : 'Check for Updates Now'}</span>
+                    <span>{isCheckingUpdates ? 'Polling GitHub...' : 'Check for Updates Now'}</span>
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-300 uppercase mb-1">
-                      Repository (owner/repo)
-                    </label>
-                    <input
-                      type="text"
-                      value={customRepoInput}
-                      onChange={(e) => setCustomRepoInput(e.target.value)}
-                      placeholder="samy-aljamal/bjj-academy-app"
-                      className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
-                    />
+                <div className="p-3 bg-stone-900/80 rounded-xl border border-stone-800 flex items-center justify-between flex-wrap gap-2 text-xs">
+                  <div className="flex items-center gap-2 text-stone-300">
+                    <span className="font-bold text-stone-400 uppercase text-[10px]">Configured Repo:</span>
+                    <a
+                      href={`https://github.com/${HARDCODED_REPO}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-amber-400 hover:underline flex items-center gap-1 font-bold"
+                    >
+                      <span>https://github.com/{HARDCODED_REPO}</span>
+                      <ExternalLink className="w-3 h-3 text-stone-400" />
+                    </a>
                   </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-300 uppercase mb-1">
-                      Deployment Target Branch
-                    </label>
-                    <input
-                      type="text"
-                      value={customBranchInput}
-                      onChange={(e) => setCustomBranchInput(e.target.value)}
-                      placeholder="main"
-                      className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
-                    />
+                  <div className="flex items-center gap-1.5 text-stone-400 font-mono text-[11px]">
+                    <GitBranch className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Target: <strong className="text-emerald-400">{HARDCODED_BRANCH}</strong></span>
                   </div>
                 </div>
               </div>
 
-              {/* Update Check Result Banner */}
-              {updateCheckResult && (
-                <div className="space-y-4">
-                  {updateCheckResult.release ? (
-                    <div className="bg-stone-950 border-2 border-amber-500/60 rounded-2xl p-5 shadow-2xl space-y-4 animate-in fade-in">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-800">
-                        <div className="flex items-center gap-3">
-                          <div className="p-3 bg-amber-500/20 border border-amber-500/40 rounded-xl text-amber-400">
-                            <Sparkles className="w-5 h-5" />
+              {/* Version Selector (When versions are retrieved) */}
+              {availableVersions.length > 0 && (
+                <div className="bg-stone-950 border border-stone-800 rounded-2xl p-5 space-y-4 animate-in fade-in">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-stone-800">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-emerald-400" />
+                        Choose Version / Commit to Deploy ({availableVersions.length} Available)
+                      </h4>
+                      <p className="text-xs text-stone-400">
+                        Select any specific release or commit from GitHub to test or deploy live:
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Dropdown / Quick Selector */}
+                  <div className="space-y-2">
+                    <label className="block text-[11px] font-bold text-stone-300 uppercase">
+                      Select Target Version to Install:
+                    </label>
+                    <select
+                      value={selectedVersion?.version || ''}
+                      onChange={(e) => {
+                        const found = availableVersions.find((v) => v.version === e.target.value);
+                        if (found) setSelectedVersion(found);
+                      }}
+                      className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white focus:outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      {availableVersions.map((v) => (
+                        <option key={v.version} value={v.version}>
+                          {v.isLatest ? '⭐ [LATEST] ' : ''}{v.version} — {v.releaseName} ({new Date(v.publishedAt).toLocaleDateString()})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Selected Version Detail Card */}
+                  {selectedVersion && (
+                    <div className="bg-stone-900/90 border border-emerald-500/40 rounded-xl p-4 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-stone-800">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-emerald-500/20 border border-emerald-500/30 rounded-lg text-emerald-400">
+                            <Sparkles className="w-4 h-4" />
                           </div>
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="text-sm font-black text-white">{updateCheckResult.release.releaseName}</h4>
-                              <span className="px-2 py-0.5 text-[10px] font-mono font-black uppercase bg-emerald-500 text-stone-950 rounded">
-                                {updateCheckResult.release.releaseTag}
+                              <h5 className="text-xs font-black text-white">{selectedVersion.releaseName}</h5>
+                              <span className="px-1.5 py-0.5 text-[10px] font-mono font-black uppercase bg-emerald-500 text-stone-950 rounded">
+                                {selectedVersion.version}
                               </span>
+                              {selectedVersion.isLatest && (
+                                <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase bg-amber-500 text-stone-950 rounded">
+                                  Latest Master
+                                </span>
+                              )}
                             </div>
-                            <span className="text-[11px] text-stone-400">
-                              Published: {new Date(updateCheckResult.release.publishedAt).toLocaleDateString()}
-                            </span>
+                            <div className="flex items-center gap-3 text-[11px] text-stone-400 mt-0.5">
+                              <span>Author: <strong className="text-stone-300">{selectedVersion.author || 'seca999'}</strong></span>
+                              <span>•</span>
+                              <span>Date: {new Date(selectedVersion.publishedAt).toLocaleString()}</span>
+                            </div>
                           </div>
                         </div>
 
@@ -1694,34 +1734,46 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                           type="button"
                           onClick={handleDeployUpdate}
                           disabled={isDeployingUpdate}
-                          className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-stone-950 font-black rounded-xl text-xs inline-flex items-center gap-2 shadow-xl hover:shadow-2xl transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50"
+                          className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-stone-950 font-black rounded-xl text-xs inline-flex items-center gap-2 shadow-xl hover:shadow-2xl transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50"
                         >
                           <Rocket className="w-4 h-4" />
-                          <span>{isDeployingUpdate ? 'Deploying...' : 'Download & Auto-Deploy Update'}</span>
+                          <span>{isDeployingUpdate ? 'Installing...' : `Install & Deploy Version ${selectedVersion.version}`}</span>
                         </button>
                       </div>
 
-                      {/* Release Highlights */}
-                      <div>
-                        <span className="text-xs font-bold text-stone-300 uppercase tracking-wider block mb-2">
-                          New Features & Changes in this Release:
-                        </span>
-                        <div className="space-y-1.5">
-                          {updateCheckResult.release.highlights.map((item, idx) => (
-                            <div key={idx} className="flex items-start gap-2 text-xs text-stone-300">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                              <span>{item}</span>
-                            </div>
-                          ))}
+                      {/* Commit details / Highlights */}
+                      <div className="text-xs space-y-1">
+                        <span className="text-[10px] font-bold uppercase text-stone-400 block">Commit Message / Highlights:</span>
+                        <div className="p-2.5 bg-stone-950 rounded-lg border border-stone-800 font-mono text-[11px] text-stone-300 whitespace-pre-line leading-relaxed max-h-36 overflow-y-auto">
+                          {selectedVersion.body}
                         </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="p-4 bg-emerald-950/40 border border-emerald-800 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span>Your application is fully up-to-date with the latest release!</span>
+
+                      <div className="flex items-center justify-between text-[11px] text-stone-400 pt-1">
+                        <span>SHA: <strong className="font-mono text-stone-300">{selectedVersion.commitHash || selectedVersion.version}</strong></span>
+                        <a
+                          href={selectedVersion.htmlUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-amber-400 hover:underline flex items-center gap-1 font-bold"
+                        >
+                          <span>View on GitHub</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Error Banner */}
+              {updateCheckResult?.error && (
+                <div className="p-4 bg-red-950/60 border border-red-800 rounded-2xl text-xs text-red-200 flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block text-white mb-0.5">Could not poll GitHub:</span>
+                    <span>{updateCheckResult.error}</span>
+                  </div>
                 </div>
               )}
 

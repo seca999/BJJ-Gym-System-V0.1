@@ -592,26 +592,31 @@ export const BeltBadge: React.FC<BeltBadgeProps> = ({
   const config = BELT_CONFIGS[belt] || BELT_CONFIGS.White;
   const isBlack = belt === 'Black';
 
-  // Strictly fixed uniform dimensions so every belt badge is 100% identically sized
-  const widthClass = size === 'sm' ? 'w-[135px]' : size === 'lg' ? 'w-[190px]' : 'w-[155px]';
-  const heightClass = size === 'sm' ? 'h-6 text-[10px]' : size === 'lg' ? 'h-8 text-xs' : 'h-7 text-xs';
+  // Strictly fixed uniform dimensions so every student badge is 100% identically sized
+  // sm: fixed w-[158px], h-[26px] — ample width so even 12-char compound names (ORANGE-BLACK, ORANGE-WHITE) fit completely
+  // md: fixed w-[180px], h-[28px]
+  // lg: fixed w-[215px], h-[32px]
+  const widthClass = size === 'sm' ? 'w-[158px]' : size === 'lg' ? 'w-[215px]' : 'w-[180px]';
+  const heightClass = size === 'sm' ? 'h-[26px]' : size === 'lg' ? 'h-[32px]' : 'h-[28px]';
+  const fontSize = size === 'sm' ? '9.5px' : size === 'lg' ? '12px' : '10.5px';
+  const textPadding = size === 'sm' ? 'px-2' : size === 'lg' ? 'px-3' : 'px-2.5';
 
   // Explicit pixel dimensions for rank sleeve and strictly fixed stripe slots
-  const sleeveWidth = size === 'sm' ? '38px' : size === 'lg' ? '54px' : '44px';
-  const sleevePadding = size === 'sm' ? 'px-2' : size === 'lg' ? 'px-2.5' : 'px-2';
-  const stripeGap = size === 'sm' ? '3px' : size === 'lg' ? '5px' : '4px';
-  const stripeWidth = size === 'sm' ? '3px' : size === 'lg' ? '5px' : '4px';
+  const sleeveWidth = size === 'sm' ? '36px' : size === 'lg' ? '50px' : '42px';
+  const sleevePadding = size === 'sm' ? 'px-1.5' : size === 'lg' ? 'px-2' : 'px-1.5';
+  const stripeGap = size === 'sm' ? '2.5px' : size === 'lg' ? '4px' : '3px';
+  const stripeWidth = size === 'sm' ? '2.5px' : size === 'lg' ? '4px' : '3px';
 
   return (
-    <div className="inline-flex items-center gap-2 shrink-0">
-      {/* Authentic BJJ Belt visual representation with stitching & rank sleeve - STRICTLY UNIFORM FIXED SIZE */}
+    <div className="inline-flex items-center gap-1.5 shrink-0">
+      {/* Authentic BJJ Belt visual representation with stitching & rank sleeve - STRICTLY UNIFORM SAME SIZE */}
       <div
-        className={`relative inline-flex items-center justify-between rounded-md border shadow-xs overflow-hidden select-none shrink-0 ${config.bgGradient} ${config.borderColor} ${heightClass} ${widthClass}`}
+        className={`relative inline-flex items-center justify-between rounded-md border shadow-xs overflow-hidden select-none shrink-0 ${widthClass} ${heightClass} ${config.bgGradient} ${config.borderColor}`}
         title={`${belt} Belt, ${stripes} Stripe${stripes === 1 ? '' : 's'}`}
       >
         {/* Belt fabric stitching lines top and bottom */}
-        <div className="absolute inset-x-0 top-[2px] border-t border-black/20 pointer-events-none" />
-        <div className="absolute inset-x-0 bottom-[2px] border-b border-black/20 pointer-events-none" />
+        <div className="absolute inset-x-0 top-[1.5px] border-t border-black/25 pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-[1.5px] border-b border-black/25 pointer-events-none" />
 
         {/* Youth center longitudinal stripe for White/Black youth varieties */}
         {config.centerStripe && (
@@ -624,17 +629,17 @@ export const BeltBadge: React.FC<BeltBadgeProps> = ({
           />
         )}
 
-        {/* Full Belt Rank Name - Fixed width area, neatly centered or padded */}
+        {/* Full Belt Rank Name - 100% visible, never cut off or truncated */}
         <span
-          className={`relative z-10 px-1.5 font-black tracking-wider uppercase truncate flex-1 min-w-0 drop-shadow-xs text-left ${config.textColor}`}
-          style={{ fontSize: size === 'sm' ? '9px' : size === 'lg' ? '12px' : '10px' }}
+          className={`relative z-10 ${textPadding} font-black tracking-tight uppercase whitespace-nowrap drop-shadow-xs text-left flex-1 min-w-0 ${config.textColor}`}
+          style={{ fontSize }}
         >
           {belt}
         </span>
 
-        {/* Rank sleeve bar with stripe positions - Fixed alignment from edge so every stripe is placed at the exact same coordinate with strictly equal spacing */}
+        {/* Rank sleeve bar with stripe positions - Fixed width with strictly equal stripe placement */}
         <div
-          className={`relative z-10 h-full flex items-center justify-start border-l shrink-0 ${sleevePadding} ${
+          className={`relative z-10 h-full flex items-center justify-center border-l shrink-0 ${sleevePadding} ${
             isBlack ? 'belt-rank-sleeve-red' : 'belt-rank-sleeve'
           }`}
           style={{
@@ -644,7 +649,7 @@ export const BeltBadge: React.FC<BeltBadgeProps> = ({
             gap: stripeGap,
           }}
         >
-          {/* Only render actual earned stripes: strictly fixed equal gap and identical thickness */}
+          {/* Render actual earned stripes with strictly equal gaps and identical thickness */}
           {Array.from({ length: stripes }).map((_, index) => (
             <div
               key={index}

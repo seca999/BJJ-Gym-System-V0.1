@@ -223,19 +223,7 @@ export async function buildOrRepairLocalDatabase(targetPath: string | undefined,
 
   const jsonContent = JSON.stringify(normalizedPayload, null, 2);
 
-  // 2. Persist to code files for Git portability
-  try {
-    fs.writeFileSync(repoPaths.srcJson, jsonContent, 'utf8');
-  } catch (err: any) {
-    console.error('Failed to write src/data/academy_database.json:', err.message);
-  }
-
-  try {
-    fs.writeFileSync(repoPaths.publicJson, jsonContent, 'utf8');
-  } catch (err: any) {
-    console.error('Failed to write public/academy_database.json:', err.message);
-  }
-
+  // 2. Persist to database folder for SQLite & JSON mirrors (avoid touching watched public/ or src/ files during runtime)
   try {
     fs.writeFileSync(repoPaths.dbJson, jsonContent, 'utf8');
   } catch (err: any) {

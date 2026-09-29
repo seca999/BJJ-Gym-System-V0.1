@@ -121,7 +121,7 @@ export function loadMembers(): Member[] {
     const data = localStorage.getItem(STORAGE_KEYS.MEMBERS);
     if (!data) {
       const fallback = (canonicalDatabase.members as Member[]) || [];
-      saveMembers(fallback);
+      saveMembers(fallback, false);
       return fallback;
     }
     return JSON.parse(data);
@@ -131,10 +131,10 @@ export function loadMembers(): Member[] {
   }
 }
 
-export function saveMembers(members: Member[]): void {
+export function saveMembers(members: Member[], syncToDisk = true): void {
   try {
     localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(members));
-    triggerDiskDatabaseSync();
+    if (syncToDisk) triggerDiskDatabaseSync();
   } catch (err) {
     console.error('Failed to save members to localStorage', err);
   }
@@ -145,7 +145,7 @@ export function loadPayments(): PaymentRecord[] {
     const data = localStorage.getItem(STORAGE_KEYS.PAYMENTS);
     if (!data) {
       const fallback = (canonicalDatabase.payments as PaymentRecord[]) || [];
-      savePayments(fallback);
+      savePayments(fallback, false);
       return fallback;
     }
     const parsed: PaymentRecord[] = JSON.parse(data);
@@ -160,10 +160,10 @@ export function loadPayments(): PaymentRecord[] {
   }
 }
 
-export function savePayments(payments: PaymentRecord[]): void {
+export function savePayments(payments: PaymentRecord[], syncToDisk = true): void {
   try {
     localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(payments));
-    triggerDiskDatabaseSync();
+    if (syncToDisk) triggerDiskDatabaseSync();
   } catch (err) {
     console.error('Failed to save payments to localStorage', err);
   }
@@ -174,7 +174,7 @@ export function loadAttendance(): AttendanceRecord[] {
     const data = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
     if (!data) {
       const fallback = (canonicalDatabase.attendance as AttendanceRecord[]) || [];
-      saveAttendance(fallback);
+      saveAttendance(fallback, false);
       return fallback;
     }
     return JSON.parse(data);
@@ -184,10 +184,10 @@ export function loadAttendance(): AttendanceRecord[] {
   }
 }
 
-export function saveAttendance(records: AttendanceRecord[]): void {
+export function saveAttendance(records: AttendanceRecord[], syncToDisk = true): void {
   try {
     localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
-    triggerDiskDatabaseSync();
+    if (syncToDisk) triggerDiskDatabaseSync();
   } catch (err) {
     console.error('Failed to save attendance to localStorage', err);
   }
@@ -198,7 +198,7 @@ export function loadClasses(): ClassSession[] {
     const data = localStorage.getItem(STORAGE_KEYS.CLASSES);
     if (!data) {
       const fallback = (canonicalDatabase.classes as ClassSession[]) || [];
-      saveClasses(fallback);
+      saveClasses(fallback, false);
       return fallback;
     }
     return JSON.parse(data);
@@ -208,10 +208,10 @@ export function loadClasses(): ClassSession[] {
   }
 }
 
-export function saveClasses(classes: ClassSession[]): void {
+export function saveClasses(classes: ClassSession[], syncToDisk = true): void {
   try {
     localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(classes));
-    triggerDiskDatabaseSync();
+    if (syncToDisk) triggerDiskDatabaseSync();
   } catch (err) {
     console.error('Failed to save classes to localStorage', err);
   }
@@ -222,7 +222,7 @@ export function loadSettings(): GymSettings {
     const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     if (!data) {
       const fallback = (canonicalDatabase.settings as GymSettings) || DEFAULT_SETTINGS;
-      saveSettings(fallback);
+      saveSettings(fallback, false);
       return fallback;
     }
     const parsed = JSON.parse(data);
@@ -242,10 +242,10 @@ export function loadSettings(): GymSettings {
   }
 }
 
-export function saveSettings(settings: GymSettings): void {
+export function saveSettings(settings: GymSettings, syncToDisk = true): void {
   try {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-    triggerDiskDatabaseSync();
+    if (syncToDisk) triggerDiskDatabaseSync();
   } catch (err) {
     console.error('Failed to save settings to localStorage', err);
   }
@@ -256,7 +256,7 @@ export function loadCoaches(): Coach[] {
     const data = localStorage.getItem(STORAGE_KEYS.COACHES);
     if (!data) {
       const fallback = (canonicalDatabase.coaches as Coach[]) || [];
-      saveCoaches(fallback);
+      saveCoaches(fallback, false);
       return fallback;
     }
     return JSON.parse(data);
@@ -266,10 +266,10 @@ export function loadCoaches(): Coach[] {
   }
 }
 
-export function saveCoaches(coaches: Coach[]): void {
+export function saveCoaches(coaches: Coach[], syncToDisk = true): void {
   try {
     localStorage.setItem(STORAGE_KEYS.COACHES, JSON.stringify(coaches));
-    triggerDiskDatabaseSync();
+    if (syncToDisk) triggerDiskDatabaseSync();
   } catch (err) {
     console.error('Failed to save coaches to localStorage', err);
   }
@@ -395,7 +395,7 @@ export function loadTimetableConfig(): TimetableConfig {
     if (!data) {
       const fallback = (canonicalDatabase.timetableConfig as TimetableConfig) || DEFAULT_TIMETABLE_CONFIG;
       const normalizedFallback = normalizeFixedTimetable(fallback);
-      saveTimetableConfig(normalizedFallback);
+      saveTimetableConfig(normalizedFallback, false);
       return normalizedFallback;
     }
     const parsed = JSON.parse(data);
@@ -407,10 +407,10 @@ export function loadTimetableConfig(): TimetableConfig {
   }
 }
 
-export function saveTimetableConfig(config: TimetableConfig): void {
+export function saveTimetableConfig(config: TimetableConfig, syncToDisk = true): void {
   try {
     localStorage.setItem(STORAGE_KEYS.TIMETABLE, JSON.stringify(config));
-    triggerDiskDatabaseSync();
+    if (syncToDisk) triggerDiskDatabaseSync();
   } catch (err) {
     console.error('Failed to save timetable config to localStorage', err);
   }
@@ -421,7 +421,7 @@ export function loadSubscriptionPlans(): SubscriptionPlan[] {
     const data = localStorage.getItem(STORAGE_KEYS.PLANS);
     if (!data) {
       const fallback = (canonicalDatabase.subscriptionPlans as SubscriptionPlan[]) || INITIAL_SUBSCRIPTION_PLANS;
-      saveSubscriptionPlans(fallback);
+      saveSubscriptionPlans(fallback, false);
       return fallback;
     }
     const parsed: SubscriptionPlan[] = JSON.parse(data);
@@ -435,10 +435,10 @@ export function loadSubscriptionPlans(): SubscriptionPlan[] {
   }
 }
 
-export function saveSubscriptionPlans(plans: SubscriptionPlan[]): void {
+export function saveSubscriptionPlans(plans: SubscriptionPlan[], syncToDisk = true): void {
   try {
     localStorage.setItem(STORAGE_KEYS.PLANS, JSON.stringify(plans));
-    triggerDiskDatabaseSync();
+    if (syncToDisk) triggerDiskDatabaseSync();
   } catch (err) {
     console.error('Failed to save subscription plans to localStorage', err);
   }

@@ -178,7 +178,7 @@ Open your browser at **`http://localhost:5555`**.
 
 ### Windows Step 6: One-Click Automated Launch via Batch Files
 You can skip manual command line entry by double-clicking the included batch files in File Explorer:
-- **`start_app.bat`**: Starts the application silently in the background (no open CMD window), automatically installs dependencies if missing, frees port 5555, and opens the browser at `http://localhost:5555`.
+- **`start_app.bat`**: Starts the application silently in the background (no open CMD window). Automatically detects new version ZIPs or updates, cleans and overwrites old source files while safely preserving your live database (`database/`), clears stale build cache, frees port 5555, installs dependencies if missing, and opens `http://localhost:5555`.
 - **`stop_app.bat`**: Safely stops the background application server and frees port 5555 while keeping all database records intact.
 
 ### Windows Step 7: Configure Windows Defender Firewall (For Tablet / Local Network Access)
