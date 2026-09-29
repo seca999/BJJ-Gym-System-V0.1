@@ -128,19 +128,18 @@ Open Google Chrome, Microsoft Edge, or Firefox and go to:
 
 ---
 
-## Step 7: Automated 1-Click Deployment with Batch Scripts
+## Step 7: Automated 1-Click Launch with Batch Scripts
 
-For non-technical staff or quick deployment, the project includes pre-configured Windows batch files:
+For non-technical staff or quick deployment, the project includes 2 pre-configured Windows batch files:
 
-### Quick Launch (`start_app.bat`):
+### Background Launch (`start_app.bat`):
 1. Navigate to your project folder in Windows File Explorer.
 2. Double-click **`start_app.bat`**.
-3. It will automatically check for Node.js, install any missing dependencies, start the server on port `5555`, and automatically open your default browser!
+3. It runs silently in the background (no open CMD window), automatically checks/installs dependencies, frees port 5555, and opens your browser at `http://localhost:5555`!
 
-### Version Deployer (`deploy_and_run.bat`):
-1. Place exported version `.zip` archives into `C:\BJJ Academy\Implement\Versions`.
-2. Double-click **`deploy_and_run.bat`**.
-3. Select the version number to deploy; it unpacks, builds, and launches the server while preserving database files!
+### Stop Server (`stop_app.bat`):
+1. Double-click **`stop_app.bat`**.
+2. It safely stops the background Node server and frees port 5555 while keeping all database records intact.
 
 ---
 
@@ -201,10 +200,8 @@ To deploy this application onto a second Windows laptop (e.g., front desk check-
 
 | Batch File | Function |
 | :--- | :--- |
-| **`start_app.bat`** | Quick-start server on port 5555 and launch default web browser |
-| **`deploy_and_run.bat`** | Multi-version deployment assistant that preserves existing database records |
-| **`stop_and_cleanup.bat`** | Kills any orphaned Node.js processes holding port 5555 |
-| **`health_check.bat`** | Verifies database schema integrity and table accessibility |
+| **`start_app.bat`** | Launches server in the background (no open CMD window), frees port 5555, and opens browser |
+| **`stop_app.bat`** | Safely terminates the background server process and frees port 5555 |
 
 ---
 

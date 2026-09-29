@@ -178,10 +178,8 @@ Open your browser at **`http://localhost:5555`**.
 
 ### Windows Step 6: One-Click Automated Launch via Batch Files
 You can skip manual command line entry by double-clicking the included batch files in File Explorer:
-- **`start_app.bat`**: Automatically checks Node.js, installs dependencies if needed, starts the server on port 5555, and launches your web browser.
-- **`deploy_and_run.bat`**: Deploys a new version package while preserving existing database files.
-- **`stop_and_cleanup.bat`**: Frees port 5555 and safely shuts down background processes.
-- **`health_check.bat`**: Validates the embedded database schema and table integrity.
+- **`start_app.bat`**: Starts the application silently in the background (no open CMD window), automatically installs dependencies if missing, frees port 5555, and opens the browser at `http://localhost:5555`.
+- **`stop_app.bat`**: Safely stops the background application server and frees port 5555 while keeping all database records intact.
 
 ### Windows Step 7: Configure Windows Defender Firewall (For Tablet / Local Network Access)
 To allow tablets, front desk check-in iPads, and coach laptops on the gym Wi-Fi to access the system:
@@ -232,10 +230,8 @@ To have the application start automatically when the computer turns on:
 │   ├── LINUX_DEPLOYMENT.md     # 🐧 Dedicated, step-by-step Linux deployment guide
 │   └── WINDOWS_DEPLOYMENT.md   # 🪟 Dedicated, step-by-step Windows deployment guide
 ├── README.md                   # This master documentation file
-├── start_app.bat               # Windows quick-starter script
-├── deploy_and_run.bat          # Windows automated deployer
-├── stop_and_cleanup.bat        # Windows cleanup tool
-├── health_check.bat            # Windows database check tool
+├── start_app.bat               # Windows background runner (no CMD window)
+├── stop_app.bat                # Windows background stop tool
 ├── start_app.sh                # Linux quick-starter script
 ├── stop_and_cleanup.sh         # Linux cleanup tool
 └── deploy_and_run.sh           # Linux automated deployer
