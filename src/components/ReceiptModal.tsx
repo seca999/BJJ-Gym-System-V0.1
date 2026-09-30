@@ -1,13 +1,15 @@
-import React from 'react';
-import { X, Printer, CheckCircle2, ShieldCheck, Download } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Printer, CheckCircle2, ShieldCheck, Download, Send, ExternalLink, Smartphone } from 'lucide-react';
 import { PaymentRecord, GymSettings } from '../types';
 import { formatCurrency } from '../utils/currencyUtils';
+import { dispatchWhatsAppMessage, dispatchSMSMessage } from '../utils/messagingLogger';
 
 interface ReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
   payment: PaymentRecord | null;
   settings: GymSettings;
+  memberPhone?: string;
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
@@ -15,11 +17,57 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   onClose,
   payment,
   settings,
+  memberPhone = '',
 }) => {
+  const [recipientPhoneInput, setRecipientPhoneInput] = useState(memberPhone);
+  const [isSentToast, setIsSentToast] = useState<string | null>(null);
+
   if (!isOpen || !payment) return null;
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const getReceiptMessageText = () => {
+    return `🧾 Official Payment Receipt - ${settings.gymName || 'Ravens BJJ Academy'}\n\nStudent: ${payment.memberName}\nPackage: ${payment.membershipPackage}\nAmount: ${formatCurrency(payment.amount, payment.currency || settings.currencySymbol)} (${payment.paymentMethod})\nReceipt #: ${payment.receiptNumber}\nDate: ${payment.date} at ${payment.time}\nClasses Credited: ${payment.classesCredited > 0 ? `+${payment.classesCredited} classes` : 'Unlimited'}\n\nThank you for training with ${settings.gymName || 'Ravens BJJ Academy'}! OSS! 🥋`;
+  };
+
+  const handleSendWhatsApp = () => {
+    const text = getReceiptMessageText();
+    dispatchWhatsAppMessage({
+      memberId: payment.memberId,
+      memberName: payment.memberName,
+      phone: recipientPhoneInput,
+      recipientName: payment.memberName,
+      recipientPhone: recipientPhoneInput,
+      isYouth: false,
+      beltRank: 'Member',
+      classesRemaining: payment.classesCredited,
+      triggerType: 'payment_receipt',
+      messageText: text,
+      dispatchedBy: 'Payment Checkout (Receipt Modal)',
+    });
+    setIsSentToast('Receipt logged & WhatsApp window opened!');
+    setTimeout(() => setIsSentToast(null), 4000);
+  };
+
+  const handleSendSMS = () => {
+    const text = getReceiptMessageText();
+    dispatchSMSMessage({
+      memberId: payment.memberId,
+      memberName: payment.memberName,
+      phone: recipientPhoneInput,
+      recipientName: payment.memberName,
+      recipientPhone: recipientPhoneInput,
+      isYouth: false,
+      beltRank: 'Member',
+      classesRemaining: payment.classesCredited,
+      triggerType: 'payment_receipt',
+      messageText: text,
+      dispatchedBy: 'Payment Checkout (Receipt Modal SMS)',
+    });
+    setIsSentToast('Receipt logged & SMS dispatched!');
+    setTimeout(() => setIsSentToast(null), 4000);
   };
 
   return (
@@ -33,19 +81,27 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
-              className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Print Receipt</span>
+              <span>Print</span>
             </button>
             <button
               onClick={onClose}
-              className="p-1 rounded-lg text-stone-500 hover:text-stone-900 transition-colors"
+              className="p-1 rounded-lg text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
+
+        {/* Toast Alert */}
+        {isSentToast && (
+          <div className="bg-emerald-600 text-white text-xs px-4 py-2 font-bold flex items-center justify-between animate-in fade-in">
+            <span>✔ {isSentToast}</span>
+            <span className="text-[10px] opacity-80">Saved to Sending Logs</span>
+          </div>
+        )}
 
         {/* Printable Receipt Body */}
         <div className="p-8 space-y-6" id="printable-receipt">
@@ -127,6 +183,38 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </table>
           </div>
 
+          {/* WhatsApp / SMS Send Dispatch Bar (Screen Only) */}
+          <div className="bg-stone-50 p-3.5 rounded-xl border border-stone-200 space-y-2.5 print:hidden">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-stone-600 block">
+              Send Receipt to Student / Parent
+            </span>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Phone (e.g. +962 7 9123 4567)"
+                value={recipientPhoneInput}
+                onChange={(e) => setRecipientPhoneInput(e.target.value)}
+                className="flex-1 px-3 py-1.5 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-emerald-600 font-mono"
+              />
+              <button
+                type="button"
+                onClick={handleSendWhatsApp}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>WhatsApp</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSendSMS}
+                className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>SMS</span>
+              </button>
+            </div>
+          </div>
+
           {/* Receipt Footer */}
           <div className="text-center pt-2 border-t border-stone-200 text-stone-400 text-[11px] space-y-1">
             <p>Oss! Thank you for training with {settings.gymName}.</p>
@@ -138,7 +226,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         <div className="px-6 py-3 bg-stone-100 border-t border-stone-200 text-right print:hidden">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded-lg text-xs font-semibold transition-colors"
+            className="px-4 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
           >
             Close Receipt
           </button>

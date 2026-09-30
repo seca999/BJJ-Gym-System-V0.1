@@ -143,13 +143,23 @@ export function processAutomatedRenewalReminders(members: Member[]): RenewalRemi
         isYouth,
         ageGroup: member.ageGroup,
         beltRank: member.beltRank,
+        stripes: member.stripes,
         classesRemaining: member.classesRemaining,
         triggerType,
+        channel: 'whatsapp',
         messageText: text,
+        characterCount: text.length,
         date: todayStr,
         time: timeStr,
         sentVia: 'automated_background',
-        status: 'Logged',
+        status: 'Sent',
+        dispatchedBy: 'Automated System Dispatcher',
+        deliveryDetails: {
+          platform: 'Automated WhatsApp Dispatch Gateway',
+          targetNumber: recipientPhone || member.phone,
+          dispatchedTimestamp: `${todayStr} ${timeStr}`,
+          messageType: triggerType,
+        },
       };
       updatedLogs = [newLog, ...updatedLogs];
       changed = true;

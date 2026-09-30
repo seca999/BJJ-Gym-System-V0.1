@@ -13,7 +13,11 @@ import {
   User,
   Check,
   AlertCircle,
-  Copy
+  Copy,
+  MessageSquare,
+  Send,
+  ExternalLink,
+  Smartphone
 } from 'lucide-react';
 import { Member, RenewalReminderLog } from '../types';
 import { BeltBadge } from '../utils/bjjBelts';
@@ -25,6 +29,12 @@ import {
   processAutomatedRenewalReminders,
   isYouthMember 
 } from '../utils/reminderEngine';
+import { MessageSendingLogsView } from './MessageSendingLogsView';
+import { 
+  cleanPhoneNumber, 
+  dispatchWhatsAppMessage, 
+  dispatchSMSMessage 
+} from '../utils/messagingLogger';
 
 interface RenewalsAlertsViewProps {
   members: Member[];
@@ -41,7 +51,7 @@ export const RenewalsAlertsView: React.FC<RenewalsAlertsViewProps> = ({
 }) => {
   const isLight = theme === 'light';
 
-  // Navigation Tabs: Active Candidates vs Automated Reminder Log
+  // Navigation Tabs: Active Candidates vs WhatsApp & SMS Sending Logs
   const [activeTab, setActiveTab] = useState<'alerts' | 'reminder_log'>('alerts');
 
   // Reminder Logs State (Loaded from storage)
@@ -74,58 +84,60 @@ export const RenewalsAlertsView: React.FC<RenewalsAlertsViewProps> = ({
     return studentsNeedingRenewal.filter((m) => m.classesRemaining <= 0);
   }, [studentsNeedingRenewal]);
 
-  // =========================================================================
-  // AUTOMATED BACKGROUND REMINDER ENGINE
-  // Automatically detects when students reach 1 class left or finished,
-  // generates their tailored reminder, and records into the Reminder Log.
-  // =========================================================================
+  // Automated background reminder check
   useEffect(() => {
     const updated = processAutomatedRenewalReminders(members);
     setReminderLogs(updated);
   }, [members]);
 
-  // Clear reminder logs
-  const handleClearReminderLogs = () => {
-    setReminderLogs([]);
-    saveReminderLogs([]);
+  // Handle direct WhatsApp dispatch from card
+  const handleDirectWhatsAppSend = (e: React.MouseEvent, member: Member) => {
+    e.stopPropagation();
+    const { text, triggerType } = generateRenewalReminderMessage(member);
+    const { isYouth, recipientName, recipientPhone } = getMemberRecipientInfo(member);
+
+    dispatchWhatsAppMessage({
+      memberId: member.id,
+      memberName: member.fullName,
+      phone: member.phone,
+      recipientName,
+      recipientPhone,
+      isYouth,
+      ageGroup: member.ageGroup,
+      beltRank: member.beltRank,
+      stripes: member.stripes,
+      classesRemaining: member.classesRemaining,
+      triggerType,
+      messageText: text,
+      dispatchedBy: 'Alerts Dashboard (Direct WhatsApp)',
+    });
+
+    setReminderLogs(loadReminderLogs());
   };
 
-  // Export reminder logs to CSV
-  const handleExportReminderLogsCSV = () => {
-    const headers = [
-      'Timestamp Date',
-      'Timestamp Time',
-      'Student Name',
-      'Recipient',
-      'Phone',
-      'Belt Rank',
-      'Division',
-      'Classes Left',
-      'Trigger Type',
-      'Automated Process Status',
-      'Generated Message Text'
-    ];
-    const rows = reminderLogs.map((l) => [
-      l.date,
-      l.time,
-      `"${l.memberName}"`,
-      `"${l.recipientName}"`,
-      `"${l.recipientPhone}"`,
-      `"${l.beltRank}"`,
-      `"${l.ageGroup || 'Adults'}"`,
-      l.classesRemaining,
-      l.triggerType === 'one_class_left' ? '1 Class Left Notice' : 'Subscription Finished (0 Classes)',
-      'Automated Background',
-      `"${l.messageText.replace(/"/g, '""')}"`,
-    ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `automated_renewal_reminders_log_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Handle direct SMS dispatch from card
+  const handleDirectSMSSend = (e: React.MouseEvent, member: Member) => {
+    e.stopPropagation();
+    const { text, triggerType } = generateRenewalReminderMessage(member);
+    const { isYouth, recipientName, recipientPhone } = getMemberRecipientInfo(member);
+
+    dispatchSMSMessage({
+      memberId: member.id,
+      memberName: member.fullName,
+      phone: member.phone,
+      recipientName,
+      recipientPhone,
+      isYouth,
+      ageGroup: member.ageGroup,
+      beltRank: member.beltRank,
+      stripes: member.stripes,
+      classesRemaining: member.classesRemaining,
+      triggerType,
+      messageText: text,
+      dispatchedBy: 'Alerts Dashboard (Direct SMS)',
+    });
+
+    setReminderLogs(loadReminderLogs());
   };
 
   // Filtered displayed students for alerts tab
@@ -183,14 +195,14 @@ export const RenewalsAlertsView: React.FC<RenewalsAlertsViewProps> = ({
             onClick={() => setActiveTab('reminder_log')}
             className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black inline-flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === 'reminder_log'
-                ? 'bg-red-600 text-white shadow-md'
+                ? 'bg-emerald-600 text-white shadow-md'
                 : isLight
                 ? 'text-stone-700 hover:text-stone-950 hover:bg-stone-100 font-bold'
                 : 'text-stone-400 hover:text-white hover:bg-stone-800'
             }`}
           >
-            <History className={`w-4 h-4 ${activeTab === 'reminder_log' ? 'text-white' : isLight ? 'text-stone-700' : 'text-stone-300'}`} />
-            <span>Automated Reminder Log</span>
+            <MessageSquare className={`w-4 h-4 ${activeTab === 'reminder_log' ? 'text-white' : 'text-emerald-400'}`} />
+            <span>Automated Message Sending Logs</span>
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
               activeTab === 'reminder_log'
                 ? 'bg-black/30 text-white font-bold'
@@ -202,38 +214,6 @@ export const RenewalsAlertsView: React.FC<RenewalsAlertsViewProps> = ({
             </span>
           </button>
         </div>
-
-        {/* Action Buttons on Reminder Log view */}
-        {activeTab === 'reminder_log' && (
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={handleExportReminderLogsCSV}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 border cursor-pointer transition-colors ${
-                isLight
-                  ? 'bg-stone-100 hover:bg-stone-200 text-stone-800 border-stone-300'
-                  : 'bg-stone-800 hover:bg-stone-700 text-stone-200 border-stone-700'
-              }`}
-            >
-              <Download className={`w-3.5 h-3.5 ${isLight ? 'text-stone-600' : 'text-stone-400'}`} />
-              <span>Export Log CSV</span>
-            </button>
-            {reminderLogs.length > 0 && (
-              <button
-                type="button"
-                onClick={handleClearReminderLogs}
-                className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                  isLight
-                    ? 'bg-stone-100 hover:bg-red-100 text-stone-600 hover:text-red-700 border-stone-300'
-                    : 'bg-stone-850 hover:bg-red-950 text-stone-400 hover:text-red-400 border border-stone-700'
-                }`}
-                title="Clear Reminder Log"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
       {/* =========================================================================
@@ -299,18 +279,18 @@ export const RenewalsAlertsView: React.FC<RenewalsAlertsViewProps> = ({
               </button>
             </div>
 
-            {/* Compact Search */}
+            {/* Instant Search Bar */}
             <div className="relative w-full sm:w-64">
-              <Search className={`w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 ${isLight ? 'text-stone-500' : 'text-stone-500'}`} />
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
               <input
                 type="text"
-                placeholder="Search student or parent..."
+                placeholder="Search candidates..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className={`w-full text-xs pl-8 pr-3 py-1.5 rounded-lg focus:outline-hidden font-medium ${
+                className={`w-full pl-8 pr-3 py-1.5 rounded-lg text-xs border focus:outline-none transition-all ${
                   isLight
-                    ? 'bg-stone-100 border border-stone-300 text-stone-900 placeholder-stone-500 focus:border-red-600'
-                    : 'bg-stone-950 border border-stone-800 text-white placeholder-stone-500 focus:border-red-500'
+                    ? 'bg-stone-50 border-stone-300 text-stone-900 focus:bg-white focus:border-red-600'
+                    : 'bg-stone-950 border-stone-800 text-white focus:border-red-500'
                 }`}
               />
             </div>
@@ -318,187 +298,145 @@ export const RenewalsAlertsView: React.FC<RenewalsAlertsViewProps> = ({
 
           {/* Student Alert Cards Grid */}
           {displayedStudents.length === 0 ? (
-            <div className={`p-12 rounded-2xl border text-center flex flex-col items-center justify-center shadow-xs ${
+            <div className={`p-12 text-center rounded-2xl border space-y-2 ${
               isLight ? 'bg-white border-stone-200' : 'bg-stone-900 border-stone-800'
             }`}>
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-500 mb-3">
-                <CheckCircle2 className="w-6 h-6" />
-              </div>
-              <h3 className={`text-base font-bold mb-1 ${isLight ? 'text-stone-900' : 'text-white'}`}>
-                {studentsNeedingRenewal.length === 0
-                  ? 'All Student Memberships in Good Standing!'
-                  : 'No Students Match Current Filter'}
-              </h3>
-              <p className={`text-xs max-w-sm ${isLight ? 'text-stone-600' : 'text-stone-400'}`}>
-                {studentsNeedingRenewal.length === 0
-                  ? 'No students currently have 1 class left or finished subscriptions. All background renewal reminders will automatically trigger when a student reaches these thresholds.'
-                  : 'Try switching between "1 Class Left" and "Subscription Finished" tabs.'}
+              <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-500" />
+              <p className={`text-sm font-bold ${isLight ? 'text-stone-900' : 'text-white'}`}>
+                No active renewal candidates matching this filter!
+              </p>
+              <p className="text-xs text-stone-500">
+                All active class packs have healthy balances.
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {displayedStudents.map((member) => {
+                const isOneClassLeft = member.classesRemaining === 1;
                 const isFinished = member.classesRemaining <= 0;
-                const isDebt = member.classesRemaining < 0;
-                const debtAmount = Math.abs(member.classesRemaining);
-                const { isYouth, recipientName, recipientPhone } = getMemberRecipientInfo(member);
+                const { recipientName, recipientPhone, isYouth } = getMemberRecipientInfo(member);
 
                 return (
                   <div
                     key={member.id}
-                    className={`rounded-2xl p-4 border transition-all flex flex-col justify-between ${
-                      isFinished
-                        ? isLight
-                          ? 'bg-red-50/40 border-red-300 shadow-sm'
-                          : 'bg-gradient-to-b from-stone-900 to-red-950/20 border-red-800/80 shadow-md'
-                        : isLight
-                        ? 'bg-stone-50 border-stone-300 shadow-sm'
-                        : 'bg-stone-900 border-stone-800 shadow-sm'
+                    className={`p-4 rounded-2xl border transition-all flex flex-col justify-between space-y-3 relative group ${
+                      isLight
+                        ? isFinished
+                          ? 'bg-white border-red-300 hover:border-red-500 shadow-sm'
+                          : 'bg-white border-orange-200 hover:border-orange-400 shadow-sm'
+                        : isFinished
+                        ? 'bg-stone-900/90 border-red-900/60 hover:border-red-600 shadow-md'
+                        : 'bg-stone-900/90 border-orange-900/40 hover:border-orange-500 shadow-md'
                     }`}
                   >
-                    <div>
-                      {/* Top Row: Student Name, Belt, and Trigger Badge */}
-                      <div className="flex items-start justify-between gap-2.5 mb-2.5">
-                        <div className="min-w-0">
+                    <div className="space-y-2.5">
+                      {/* Top Header: Badge & Status */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <h3 
+                            <h3
                               onClick={() => onSelectMember(member)}
-                              className={`font-black text-base hover:text-red-600 transition-colors cursor-pointer truncate ${
+                              className={`text-sm font-black hover:underline cursor-pointer transition-colors ${
                                 isLight ? 'text-stone-950' : 'text-white'
                               }`}
                             >
                               {member.fullName}
                             </h3>
-
                             <button
                               type="button"
                               onClick={(e) => handleCopyName(e, member.fullName, member.id)}
-                              title={copiedMemberId === member.id ? 'Copied name to clipboard!' : `Copy "${member.fullName}"`}
-                              className={`p-1 rounded-md transition-all inline-flex items-center gap-1 text-[11px] cursor-pointer active:scale-95 ${
-                                copiedMemberId === member.id
-                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-xs'
-                                  : isLight
-                                  ? 'text-stone-500 hover:text-stone-900 hover:bg-stone-200 border border-transparent'
-                                  : 'text-stone-400 hover:text-white hover:bg-stone-800 border border-transparent'
-                              }`}
+                              className="text-stone-400 hover:text-white p-0.5 rounded cursor-pointer"
+                              title="Copy Name"
                             >
-                              {copiedMemberId === member.id ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                  <span className="font-mono text-[10px] font-bold">Copied</span>
-                                </>
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
+                              {copiedMemberId === member.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                             </button>
-
-                            {member.ageGroup && (
-                              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
-                                member.ageGroup === 'Kids'
-                                  ? isLight ? 'bg-stone-200 text-stone-950 border-stone-300' : 'bg-stone-800 text-stone-300 border-stone-700'
-                                  : member.ageGroup === 'Teens'
-                                  ? isLight ? 'bg-purple-100 text-purple-950 border-purple-300' : 'bg-purple-950 text-purple-300 border-purple-800'
-                                  : isLight ? 'bg-stone-100 text-stone-800 border-stone-300' : 'bg-stone-800 text-stone-300 border-stone-700'
-                              }`}>
-                                {member.ageGroup}
-                              </span>
-                            )}
                           </div>
-                          <div className="mt-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-stone-400 font-medium">
+                              {member.ageGroup || 'Adults'}
+                            </span>
+                            <span className="text-stone-600">•</span>
                             <BeltBadge belt={member.beltRank} stripes={member.stripes} size="sm" />
                           </div>
                         </div>
 
-                        {/* Trigger Status Badge */}
-                        {isDebt ? (
-                          <span className="px-2.5 py-1 rounded-xl text-xs font-black uppercase bg-red-600 text-white shadow-xs animate-pulse shrink-0">
-                            Debt: {debtAmount} Class{debtAmount > 1 ? 'es' : ''}
-                          </span>
-                        ) : isFinished ? (
-                          <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase shrink-0 ${
-                            isLight
-                              ? 'bg-red-100 text-red-950 border border-red-300 font-extrabold'
-                              : 'bg-red-950 text-red-300 border border-red-800'
-                          }`}>
-                            ⛔ Finished (0 Left)
-                          </span>
-                        ) : (
-                          <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase shrink-0 ${
-                            isLight
-                              ? 'bg-orange-100 text-orange-950 border border-orange-400 font-extrabold'
-                              : 'bg-stone-800 text-orange-400 border border-stone-700'
-                          }`}>
-                            ⚠️ 1 Class Left
-                          </span>
-                        )}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black uppercase tracking-wider shrink-0 ${
+                          isFinished
+                            ? 'bg-red-600 text-white shadow-xs animate-pulse'
+                            : 'bg-orange-500 text-stone-950 shadow-xs'
+                        }`}>
+                          {isFinished ? '0 Left (Finished)' : '1 Class Left'}
+                        </span>
                       </div>
 
                       {/* Recipient & Contact Details */}
-                      <div className={`rounded-xl p-2.5 border text-xs space-y-1 mb-3 ${
-                        isLight ? 'bg-white border-stone-200' : 'bg-stone-950/90 border border-stone-800'
+                      <div className={`p-2.5 rounded-xl border space-y-1 text-xs ${
+                        isLight ? 'bg-stone-50 border-stone-200' : 'bg-stone-950/70 border-stone-800'
                       }`}>
-                        <div className={`flex items-center justify-between pb-1 border-b ${
-                          isLight ? 'border-stone-200' : 'border-stone-850'
-                        }`}>
-                          <span className={`font-semibold flex items-center gap-1 text-[11px] ${
-                            isLight ? 'text-stone-600' : 'text-stone-400'
-                          }`}>
-                            <Users className={`w-3 h-3 ${isLight ? 'text-stone-700' : 'text-stone-400'}`} />
-                            <span>Contact:</span>
-                          </span>
-                          <span className={`font-bold text-xs ${
-                            isYouth
-                              ? isLight ? 'text-stone-900 font-black' : 'text-stone-200'
-                              : isLight ? 'text-stone-900' : 'text-stone-200'
-                          }`}>
-                            {isYouth ? `👨‍👩‍👧 Parent: ${recipientName}` : `👤 Direct: ${recipientName}`}
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-stone-400">Target Contact:</span>
+                          <span className={`font-bold ${isLight ? 'text-stone-900' : 'text-stone-200'}`}>
+                            {isYouth ? `👨‍👩‍👧 ${recipientName}` : `👤 ${recipientName}`}
                           </span>
                         </div>
-
-                        <div className={`flex items-center justify-between text-[11px] ${
-                          isLight ? 'text-stone-600' : 'text-stone-400'
-                        }`}>
-                          <span>Phone:</span>
-                          <span className={`font-mono font-bold ${
-                            isLight ? 'text-stone-900' : 'text-stone-200'
-                          }`}>{recipientPhone || 'No phone recorded'}</span>
-                        </div>
-
-                        <div className={`pt-1 text-[10px] italic flex items-center gap-1 ${
-                          isLight ? 'text-stone-600 font-medium' : 'text-stone-500'
-                        }`}>
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          <span>Automated background reminder active</span>
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-stone-400">Phone:</span>
+                          <span className="font-mono text-emerald-400 font-bold">
+                            {cleanPhoneNumber(recipientPhone) || 'No Phone'}
+                          </span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Streamlined Action: Renew Plan & View Student Profile */}
-                    <div className={`pt-2.5 border-t flex items-center gap-2 ${
-                      isLight ? 'border-stone-200' : 'border-stone-800'
-                    }`}>
-                      <button
-                        type="button"
-                        onClick={() => onOpenPaymentForMember(member.id)}
-                        className="flex-1 py-2.5 px-3.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black inline-flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
-                        title="Renew or top up membership plan"
-                      >
-                        <CreditCard className="w-4 h-4" />
-                        <span>Renew Membership Plan</span>
-                      </button>
+                    {/* Action Buttons: Direct WhatsApp, Direct SMS, Renew Plan & Profile */}
+                    <div className="space-y-2 pt-1 border-t border-stone-800/60">
+                      {/* Direct Message Dispatches */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => handleDirectWhatsAppSend(e, member)}
+                          className="py-1.5 px-2 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/40 rounded-xl text-[11px] font-bold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                          title="Send reminder directly via WhatsApp and log sending"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>WhatsApp</span>
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={() => onSelectMember(member)}
-                        className={`p-2.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
-                          isLight
-                            ? 'bg-stone-100 hover:bg-stone-200 text-stone-800 border-stone-300'
-                            : 'bg-stone-800 hover:bg-stone-750 text-stone-300 border-stone-700'
-                        }`}
-                        title="View student profile & attendance history"
-                      >
-                        <User className="w-4 h-4" />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDirectSMSSend(e, member)}
+                          className="py-1.5 px-2 bg-sky-600/20 hover:bg-sky-600 text-sky-400 hover:text-white border border-sky-500/40 rounded-xl text-[11px] font-bold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                          title="Send reminder directly via SMS and log sending"
+                        >
+                          <Smartphone className="w-3 h-3" />
+                          <span>SMS Gateway</span>
+                        </button>
+                      </div>
+
+                      {/* Renew & Profile Button */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onOpenPaymentForMember(member.id)}
+                          className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-black inline-flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
+                        >
+                          <CreditCard className="w-3.5 h-3.5" />
+                          <span>Renew Pass</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => onSelectMember(member)}
+                          className={`p-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                            isLight
+                              ? 'bg-stone-100 hover:bg-stone-200 text-stone-800 border-stone-300'
+                              : 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700'
+                          }`}
+                          title="View student profile"
+                        >
+                          <User className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -509,140 +447,14 @@ export const RenewalsAlertsView: React.FC<RenewalsAlertsViewProps> = ({
       )}
 
       {/* =========================================================================
-          TAB 2: AUTOMATED REMINDER LOG VIEW (AUDITED BACKGROUND HISTORY)
+          TAB 2: COMPREHENSIVE WHATSAPP & SMS SENDING LOGS VIEW (FULL DETAILS)
           ========================================================================= */}
       {activeTab === 'reminder_log' && (
-        <div className="space-y-4">
-          <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-            isLight ? 'bg-white border-stone-200' : 'bg-stone-900 border-stone-800'
-          }`}>
-            <div>
-              <h2 className={`text-sm font-black flex items-center gap-2 ${
-                isLight ? 'text-stone-950' : 'text-white'
-              }`}>
-                <History className={`w-4 h-4 ${isLight ? 'text-red-700' : 'text-red-400'}`} />
-                <span>Automated Background Renewal Reminder History</span>
-              </h2>
-              <p className={`text-xs mt-0.5 ${isLight ? 'text-stone-600 font-medium' : 'text-stone-400'}`}>
-                Full chronological audit trail of all automatic renewal notices triggered for students with 1 class remaining or finished subscriptions.
-              </p>
-            </div>
-
-            <div className={`text-xs font-mono font-bold px-3 py-1.5 rounded-xl border ${
-              isLight
-                ? 'text-stone-900 bg-stone-100 border-stone-300 font-black'
-                : 'text-stone-300 bg-stone-950/40 border-stone-800'
-            }`}>
-              Total Logged: {reminderLogs.length} events
-            </div>
-          </div>
-
-          <div className={`rounded-2xl border overflow-hidden shadow-sm ${
-            isLight ? 'bg-white border-stone-200' : 'bg-stone-900 border-stone-800'
-          }`}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className={`uppercase text-[10px] font-black border-b ${
-                  isLight ? 'bg-stone-100 text-stone-700 border-stone-200' : 'bg-stone-950 text-stone-400 border-stone-800'
-                }`}>
-                  <tr>
-                    <th className="p-3.5">Timestamp</th>
-                    <th className="p-3.5">Student & Belt</th>
-                    <th className="p-3.5">Recipient & Contact</th>
-                    <th className="p-3.5">Trigger Reason</th>
-                    <th className="p-3.5">Automated Message Content</th>
-                    <th className="p-3.5 text-right">Process Status</th>
-                  </tr>
-                </thead>
-                <tbody className={`divide-y font-sans ${isLight ? 'divide-stone-200' : 'divide-stone-800/60'}`}>
-                  {reminderLogs.map((log) => {
-                    const isOneClass = log.triggerType === 'one_class_left';
-
-                    return (
-                      <tr key={log.id} className={isLight ? 'hover:bg-stone-50 transition-colors' : 'hover:bg-stone-850/50 transition-colors'}>
-                        {/* 1. Timestamp */}
-                        <td className="p-3.5 font-mono whitespace-nowrap">
-                          <div className={`font-bold ${isLight ? 'text-stone-950' : 'text-white'}`}>{log.date}</div>
-                          <div className={`text-[10px] ${isLight ? 'text-stone-500' : 'text-stone-500'}`}>{log.time}</div>
-                        </td>
-
-                        {/* 2. Student */}
-                        <td className="p-3.5">
-                          <div className={`font-bold text-sm ${isLight ? 'text-stone-950' : 'text-white'}`}>{log.memberName}</div>
-                          <div className={`text-[10px] mt-0.5 ${isLight ? 'text-stone-600' : 'text-stone-400'}`}>
-                            {log.ageGroup || 'Adults'} · {log.beltRank}
-                          </div>
-                        </td>
-
-                        {/* 3. Recipient */}
-                        <td className="p-3.5">
-                          <div className={`font-bold ${isLight ? 'text-stone-950 font-black' : 'text-stone-200'}`}>
-                            {log.isYouth ? `👨‍👩‍👧 ${log.recipientName}` : `👤 ${log.recipientName}`}
-                          </div>
-                          <div className={`font-mono text-[11px] mt-0.5 ${isLight ? 'text-stone-600' : 'text-stone-400'}`}>
-                            {log.recipientPhone || log.phone || 'No phone'}
-                          </div>
-                        </td>
-
-                        {/* 4. Trigger Type */}
-                        <td className="p-3.5 whitespace-nowrap">
-                          {isOneClass ? (
-                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
-                              isLight
-                                ? 'bg-orange-100 text-orange-950 border border-orange-400'
-                                : 'bg-stone-800 text-orange-300 border border-stone-700'
-                            }`}>
-                              <span>⚠️</span>
-                              <span>1 Class Left</span>
-                            </span>
-                          ) : (
-                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
-                              isLight
-                                ? 'bg-red-100 text-red-950 border border-red-400'
-                                : 'bg-red-500/20 text-red-300 border border-red-500/40'
-                            }`}>
-                              <span>⛔</span>
-                              <span>Finished (0 Left)</span>
-                            </span>
-                          )}
-                        </td>
-
-                        {/* 5. Message Content */}
-                        <td className="p-3.5 max-w-md">
-                          <div className={`text-xs p-2.5 rounded-xl border leading-relaxed font-sans ${
-                            isLight ? 'bg-stone-50 border-stone-200 text-stone-800' : 'bg-stone-950 border-stone-800 text-stone-300'
-                          }`}>
-                            {log.messageText}
-                          </div>
-                        </td>
-
-                        {/* 6. Process Status */}
-                        <td className="p-3.5 text-right whitespace-nowrap">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${
-                            isLight
-                              ? 'bg-emerald-100 text-emerald-950 border border-emerald-300'
-                              : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          }`}>
-                            <Check className="w-3 h-3" />
-                            <span>Auto Logged</span>
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-
-                  {reminderLogs.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="p-10 text-center text-stone-500 italic">
-                        No renewal reminders logged yet. When students reach 1 class left or complete their packages, the automated background engine records them here automatically.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+        <MessageSendingLogsView
+          members={members}
+          theme={theme}
+          onSelectMember={onSelectMember}
+        />
       )}
     </div>
   );

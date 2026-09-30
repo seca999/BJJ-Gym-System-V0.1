@@ -37,6 +37,7 @@ import {
   Tv
 } from 'lucide-react';
 import { Member, ClassSession, AttendanceRecord, Coach, ClassCategory } from '../types';
+import { BeltBadge } from '../utils/bjjBelts';
 import { resolveTimetableDay, TIMETABLE_DAY_TO_FULL } from '../utils/matboardSchedule';
 import { getTodayDateStr } from '../utils/weekUtils';
 import { getJordanTimeStr } from '../utils/timeUtils';
@@ -1028,9 +1029,9 @@ export const MatVisionAttendanceModal: React.FC<MatVisionAttendanceModalProps> =
                             ? 'bg-stone-900/95 text-stone-200 border-stone-700'
                             : 'bg-red-950/95 text-red-300 border-red-800'
                         }`}>
-                          <div className="flex items-center gap-1">
-                            <span>{tracker.member.fullName}</span>
-                            <span className="text-[9px] text-stone-400">({tracker.member.beltRank})</span>
+                          <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                            <span className="font-bold">{tracker.member.fullName}</span>
+                            <BeltBadge belt={tracker.member.beltRank} stripes={tracker.member.stripes} size="sm" />
                           </div>
 
                           <div className="flex items-center gap-1.5 mt-0.5 text-[9px] font-mono">
@@ -1271,11 +1272,9 @@ export const MatVisionAttendanceModal: React.FC<MatVisionAttendanceModalProps> =
                         )}
                       </div>
                       <div>
-                        <div className="font-black text-white flex items-center gap-1.5">
+                        <div className="font-black text-white flex items-center justify-between gap-1.5 flex-wrap">
                           <span>{rec.studentName}</span>
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-stone-800 text-stone-300 font-mono">
-                            {rec.beltRank}
-                          </span>
+                          <BeltBadge belt={rec.beltRank as any} stripes={(rec as any).stripes || 0} size="sm" />
                         </div>
                         <div className="text-[10px] text-stone-400">
                           {rec.className} · Coach {rec.coach}

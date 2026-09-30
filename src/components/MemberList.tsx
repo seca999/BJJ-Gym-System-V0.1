@@ -61,6 +61,7 @@ export const MemberList: React.FC<MemberListProps> = ({
   theme = 'dark',
 }) => {
   const [directorySubPage, setDirectorySubPage] = useState<'students' | 'coaches'>('students');
+  const [isAddCoachOpen, setIsAddCoachOpen] = useState(false);
   const [photoModalMember, setPhotoModalMember] = useState<Member | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBelt, setSelectedBelt] = useState<string>('ALL');
@@ -182,8 +183,8 @@ export const MemberList: React.FC<MemberListProps> = ({
           </button>
         </div>
 
-        {/* Action Button: Register New Student */}
-        {directorySubPage === 'students' && (
+        {/* Action Button: Register New Student or Register New Coach */}
+        {directorySubPage === 'students' ? (
           <button
             type="button"
             onClick={onOpenNewMember}
@@ -191,6 +192,15 @@ export const MemberList: React.FC<MemberListProps> = ({
           >
             <UserPlus className="w-4 h-4" />
             <span>+ Register New Student</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIsAddCoachOpen(true)}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-xl text-xs font-bold tracking-wide transition-all shadow-sm shrink-0 cursor-pointer active:scale-95"
+          >
+            <Award className="w-4 h-4" />
+            <span>+ Register New Coach</span>
           </button>
         )}
       </div>
@@ -204,6 +214,8 @@ export const MemberList: React.FC<MemberListProps> = ({
           onAddCoach={onAddCoach || (() => {})}
           onUpdateCoach={onUpdateCoach || (() => {})}
           onDeleteCoach={onDeleteCoach || (() => {})}
+          isOpenAddModal={isAddCoachOpen}
+          onCloseAddModal={() => setIsAddCoachOpen(false)}
         />
       ) : (
         <>

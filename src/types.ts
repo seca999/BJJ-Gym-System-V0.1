@@ -125,7 +125,16 @@ export interface AttendanceRecord {
   dayOfWeek?: string;
 }
 
-export type ReminderTriggerType = 'one_class_left' | 'subscription_finished';
+export type ReminderTriggerType = 
+  | 'one_class_left' 
+  | 'subscription_finished' 
+  | 'payment_receipt' 
+  | 'checkin_alert' 
+  | 'promotion_notice' 
+  | 'custom_broadcast'
+  | 'welcome_message';
+
+export type MessageChannel = 'whatsapp' | 'sms' | 'automated_background';
 
 export interface RenewalReminderLog {
   id: string;
@@ -137,13 +146,23 @@ export interface RenewalReminderLog {
   isYouth: boolean;
   ageGroup?: string;
   beltRank: string;
+  stripes?: StripeCount;
   classesRemaining: number;
   triggerType: ReminderTriggerType;
+  channel?: MessageChannel;
   messageText: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
-  sentVia: 'automated_background' | 'whatsapp' | 'sms';
-  status: 'Sent' | 'Logged';
+  sentVia: 'automated_background' | 'whatsapp' | 'sms' | 'direct_trigger';
+  status: 'Sent' | 'Delivered' | 'Logged' | 'Failed';
+  characterCount?: number;
+  dispatchedBy?: string;
+  deliveryDetails?: {
+    platform?: string;
+    targetNumber?: string;
+    dispatchedTimestamp?: string;
+    messageType?: string;
+  };
 }
 
 export interface PaymentRecord {

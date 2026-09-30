@@ -105,6 +105,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command ^
   "    Set-Content -Path $markerFile -Value ($latestZip.Name + '|' + $latestZip.LastWriteTimeUtc.Ticks.ToString()) -Force;" ^
   "    Remove-Item -LiteralPath $tempExtract -Recurse -Force -ErrorAction SilentlyContinue;" ^
   "    Remove-Item -LiteralPath $backupPath -Recurse -Force -ErrorAction SilentlyContinue;" ^
+  "    $needsInstall = $true;" ^
   "  } catch {}" ^
   "}" ^
   "elseif ($shouldSyncFromCurrent) {" ^
@@ -124,6 +125,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command ^
   "      };" ^
   "    };" ^
   "    Remove-Item -LiteralPath $backupPath -Recurse -Force -ErrorAction SilentlyContinue;" ^
+  "    $needsInstall = $true;" ^
   "  } catch {}" ^
   "}" ^
   "elseif (Test-Path (Join-Path $CodeDir '.git')) {" ^
@@ -136,6 +138,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command ^
   "        git -C $CodeDir clean -fd -e database -e .env -e node_modules --quiet 2>$null;" ^
   "        $viteCache = Join-Path $CodeDir 'node_modules\.vite';" ^
   "        if (Test-Path $viteCache) { Remove-Item -LiteralPath $viteCache -Recurse -Force -ErrorAction SilentlyContinue; };" ^
+  "        $needsInstall = $true;" ^
   "      }" ^
   "    }" ^
   "  } catch {}" ^
@@ -151,14 +154,20 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command ^
   "  }" ^
   "} catch {};" ^
   "Set-Location -Path $CodeDir;" ^
-  "$needsInstall = (-not (Test-Path (Join-Path $CodeDir 'node_modules\vite'))) -or (-not (Test-Path (Join-Path $CodeDir 'node_modules\html-to-image')));" ^
+  "if (-not $needsInstall) {" ^
+  "  $needsInstall = (-not (Test-Path (Join-Path $CodeDir 'node_modules\vite'))) -or (-not (Test-Path (Join-Path $CodeDir 'node_modules\canvas-confetti'))) -or (-not (Test-Path (Join-Path $CodeDir 'node_modules\lucide-react')));" ^
+  "};" ^
   "if ($needsInstall) {" ^
   "  Start-Process -FilePath 'cmd.exe' -ArgumentList '/c npm.cmd install --no-audit --no-fund' -WorkingDirectory $CodeDir -Wait -WindowStyle Hidden;" ^
   "};" ^
   "Start-Process -FilePath 'cmd.exe' -ArgumentList \"/c npm.cmd run dev -- --port $Port\" -WorkingDirectory $CodeDir -WindowStyle Hidden;" ^
   "$ready = $false;" ^
-  "for ($i = 0; $i -lt 20; $i++) {" ^
-  "  Start-Sleep -Milliseconds 600;" ^
+  "for ($i = 0; $i -lt 30; $i++) {" ^
+  "  Start-Sleep -Milliseconds 800;" ^
+  "  try {" ^
+  "    $testResp = Invoke-WebRequest -Uri \"http://localhost:$Port\" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue;" ^
+  "    if ($testResp -and $testResp.StatusCode -eq 200) { $ready = $true; break };" ^
+  "  } catch {}" ^
   "  try {" ^
   "    $testConn = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue;" ^
   "    if ($testConn) { $ready = $true; break };" ^

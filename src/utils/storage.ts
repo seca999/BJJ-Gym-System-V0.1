@@ -355,32 +355,36 @@ export function normalizeFixedTimetable(config: TimetableConfig): TimetableConfi
     return DEFAULT_TIMETABLE_CONFIG;
   }
 
+  const validSlots = Array.isArray(config.slots) ? config.slots : [];
+
   // Remap cells to matching fixed 30-minute slots based on start time
-  const mappedCells = (config.cells || []).map((cell) => {
-    const existingSlot = config.slots.find((s) => s.id === cell.slotId);
-    const cellTimeRange = cell.timeRange || existingSlot?.timeRange || '4:30 - 5:30 PM';
-    const sMin = parseSlotStartMinutes(cellTimeRange);
-    const eMin = parseSlotEndMinutes(cellTimeRange);
+  const mappedCells = (config.cells || [])
+    .filter((cell) => cell && typeof cell === 'object')
+    .map((cell) => {
+      const existingSlot = validSlots.find((s) => s.id === cell.slotId);
+      const cellTimeRange = cell.timeRange || existingSlot?.timeRange || '4:30 - 5:30 PM';
+      const sMin = parseSlotStartMinutes(cellTimeRange);
+      const eMin = parseSlotEndMinutes(cellTimeRange);
 
-    let targetSlot = FIXED_6AM_10PM_SLOTS.find((s) => {
-      const slotMin = parseSlotStartMinutes(s.timeRange);
-      return sMin >= slotMin && sMin < slotMin + 30;
+      let targetSlot = FIXED_6AM_10PM_SLOTS.find((s) => {
+        const slotMin = parseSlotStartMinutes(s.timeRange);
+        return sMin >= slotMin && sMin < slotMin + 30;
+      });
+
+      if (!targetSlot) {
+        targetSlot = sMin < 360 ? FIXED_6AM_10PM_SLOTS[0] : FIXED_6AM_10PM_SLOTS[FIXED_6AM_10PM_SLOTS.length - 1];
+      }
+
+      const duration = Math.max(15, eMin - sMin);
+      const spanSlots = Math.max(1, Math.round(duration / 30));
+
+      return {
+        ...cell,
+        slotId: targetSlot?.id || FIXED_6AM_10PM_SLOTS[0]?.id || 'slot-0600',
+        timeRange: cellTimeRange,
+        spanSlots,
+      };
     });
-
-    if (!targetSlot) {
-      targetSlot = sMin < 360 ? FIXED_6AM_10PM_SLOTS[0] : FIXED_6AM_10PM_SLOTS[FIXED_6AM_10PM_SLOTS.length - 1];
-    }
-
-    const duration = Math.max(15, eMin - sMin);
-    const spanSlots = Math.max(1, Math.round(duration / 30));
-
-    return {
-      ...cell,
-      slotId: targetSlot.id,
-      timeRange: cellTimeRange,
-      spanSlots,
-    };
-  });
 
   return {
     ...config,
@@ -598,7 +602,15 @@ export function loadReminderLogs(): RenewalReminderLog[] {
   try {
     const raw = localStorage.getItem('bjj_gym_renewal_reminder_logs_v1');
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Only return actual sent WhatsApp and SMS messages, excluding mock seed data
+    return parsed.filter(
+      (l: RenewalReminderLog) =>
+        !l.id?.startsWith('msg_log_seed_') &&
+        (l.channel === 'whatsapp' || l.channel === 'sms' || l.sentVia === 'whatsapp' || l.sentVia === 'sms') &&
+        (l.status === 'Sent' || l.status === 'Delivered')
+    );
   } catch {
     return [];
   }

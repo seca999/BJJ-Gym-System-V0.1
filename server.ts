@@ -1,17 +1,32 @@
+import fs from 'fs';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { inspectLocalDatabase, buildOrRepairLocalDatabase, readLocalDatabase } from './src/server/localDbService';
 import { deployUpdateOnServer } from './src/server/updateService';
 
-const currentDir = typeof __dirname !== 'undefined'
-  ? __dirname
-  : typeof process !== 'undefined' && process.cwd
-    ? process.cwd()
-    : '.';
-
 const app = express();
 const PORT = process.env.PORT || 5555;
+
+// Dynamically and reliably resolve the production dist folder
+function resolveDistDirectory(): string {
+  const cwd = process.cwd();
+  // 1. If running as bundled dist/server.cjs, __dirname is already the dist folder containing index.html
+  if (typeof __dirname !== 'undefined' && fs.existsSync(path.join(__dirname, 'index.html'))) {
+    return __dirname;
+  }
+  // 2. If running from repository root, check cwd/dist
+  if (fs.existsSync(path.join(cwd, 'dist', 'index.html'))) {
+    return path.join(cwd, 'dist');
+  }
+  // 3. Check __dirname/dist (if running server.ts directly with tsx in root)
+  if (typeof __dirname !== 'undefined' && fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
+    return path.join(__dirname, 'dist');
+  }
+  return path.join(cwd, 'dist');
+}
+
+const distPath = resolveDistDirectory();
 
 // Enable CORS for local desktop & web access
 app.use((req, res, next) => {
@@ -69,13 +84,43 @@ app.post('/api/system/deploy-update', async (req, res) => {
   }
 });
 
-// Static file serving in production
-const distPath = path.join(currentDir, 'dist');
-app.use(express.static(distPath));
+// Static file serving in production (with cache busting for index.html to avoid white screen freeze)
+app.use(express.static(distPath, {
+  maxAge: '1h',
+  etag: true,
+  index: false,
+}));
+
 app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    // Crucial: index.html must never be cached across updates to prevent chunk mismatch and white screens
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.sendFile(indexPath);
+  } else {
+    res.status(200).send(`
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Ravens BJJ Academy</title>
+          <meta http-equiv="refresh" content="2">
+        </head>
+        <body style="background:#0c0a09;color:#fff;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+          <div style="text-align:center;padding:20px;max-width:400px;">
+            <h2 style="margin:0 0 10px 0;font-size:18px;color:#f59e0b;">Ravens BJJ Academy System</h2>
+            <p style="margin:0;font-size:13px;color:#a8a29e;">Application is compiling updated code... Page will reload automatically.</p>
+          </div>
+        </body>
+      </html>
+    `);
+  }
 });
 
 app.listen(Number(PORT), '0.0.0.0', () => {
-  console.log(`BJJ Academy Local Server running on http://localhost:${PORT}`);
+  console.log(`BJJ Academy Server running on http://0.0.0.0:${PORT}`);
+  console.log(`Serving static files from: ${distPath}`);
 });

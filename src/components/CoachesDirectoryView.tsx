@@ -38,6 +38,8 @@ interface CoachesDirectoryViewProps {
   onUpdateCoach: (updatedCoach: Coach) => void;
   onDeleteCoach: (coachId: string) => void;
   theme?: 'light' | 'dark';
+  isOpenAddModal?: boolean;
+  onCloseAddModal?: () => void;
 }
 
 export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
@@ -48,6 +50,8 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
   onUpdateCoach,
   onDeleteCoach,
   theme = 'dark',
+  isOpenAddModal = false,
+  onCloseAddModal,
 }) => {
   // Period filter
   const [periodPreset, setPeriodPreset] = useState<'this_month' | 'last_month' | 'last_30_days' | 'custom'>('this_month');
@@ -61,8 +65,16 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modal states
-  const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
+  const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(isOpenAddModal);
   const [editingCoach, setEditingCoach] = useState<Coach | null>(null);
+
+  // Sync external open request
+  React.useEffect(() => {
+    if (isOpenAddModal) {
+      setEditingCoach(null);
+      setIsAddEditModalOpen(true);
+    }
+  }, [isOpenAddModal]);
   const [coachToDelete, setCoachToDelete] = useState<Coach | null>(null);
   const [selectedPaySlipCoach, setSelectedPaySlipCoach] = useState<CoachSalarySummary | null>(null);
 
@@ -400,26 +412,40 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* 1. SEARCH COACH SPACE */}
-      <div className="relative w-full">
-        <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-500" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search coach by name, specialty, or phone..."
-          className="w-full bg-stone-900 border border-stone-800 rounded-2xl pl-10 pr-10 py-2.5 sm:py-3 text-xs sm:text-sm text-white placeholder-stone-500 focus:outline-hidden focus:border-amber-500 shadow-sm transition-all"
-        />
-        {searchQuery && (
-          <button
-            type="button"
-            onClick={() => setSearchQuery('')}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-white rounded-lg transition-colors cursor-pointer"
-            title="Clear search"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
+      {/* 1. SEARCH COACH SPACE & ACTION BUTTON */}
+      <div className="flex items-center gap-2.5">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search coach by name, specialty, or phone..."
+            className="w-full bg-stone-900 border border-stone-800 rounded-2xl pl-10 pr-10 py-2.5 sm:py-3 text-xs sm:text-sm text-white placeholder-stone-500 focus:outline-hidden focus:border-amber-500 shadow-sm transition-all"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-stone-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setEditingCoach(null);
+            setIsAddEditModalOpen(true);
+          }}
+          className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-3 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white rounded-2xl text-xs sm:text-sm font-black tracking-wide transition-all shadow-md shrink-0 cursor-pointer active:scale-95"
+        >
+          <Plus className="w-4 h-4" />
+          <span>+ Register New Coach</span>
+        </button>
       </div>
 
       {/* 2. MAIN TABLE: COACH SALARIES, PAYMENTS PAID & PAYMENTS NEEDED AT MONTH END */}
@@ -889,6 +915,7 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
           onClose={() => {
             setIsAddEditModalOpen(false);
             setEditingCoach(null);
+            onCloseAddModal?.();
           }}
           onSave={(coachData) => {
             if (editingCoach) {
@@ -898,6 +925,7 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
             }
             setIsAddEditModalOpen(false);
             setEditingCoach(null);
+            onCloseAddModal?.();
           }}
         />
       )}
@@ -958,14 +986,14 @@ export const CoachesDirectoryView: React.FC<CoachesDirectoryViewProps> = ({
 };
 
 // SUBCOMPONENT: ADD / EDIT COACH MODAL
-interface AddEditCoachModalProps {
+export interface AddEditCoachModalProps {
   coach: Coach | null;
   isOpen: boolean;
   onClose: () => void;
   onSave: (coach: Coach) => void;
 }
 
-const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
+export const AddEditCoachModal: React.FC<AddEditCoachModalProps> = ({
   coach,
   isOpen,
   onClose,

@@ -56,27 +56,31 @@ export function loadGoogleFont(fontFamily: string): void {
   document.head.appendChild(link);
 }
 
-export function applyBrandingFonts(settings: {
+export function applyBrandingFonts(settings?: {
   customFontUrl?: string;
   customFontName?: string;
   gymNameFontFamily?: string;
   customSloganFontUrl?: string;
   sloganFontFamily?: string;
 }): void {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || !settings || typeof settings !== 'object') return;
 
-  // School name font
-  if (settings.customFontUrl) {
-    injectCustomFontFace(settings.customFontUrl, settings.customFontName || 'GymCustomSchoolFont');
-  } else if (settings.gymNameFontFamily && settings.gymNameFontFamily !== 'custom') {
-    loadGoogleFont(settings.gymNameFontFamily);
-  }
+  try {
+    // School name font
+    if (settings.customFontUrl) {
+      injectCustomFontFace(settings.customFontUrl, settings.customFontName || 'GymCustomSchoolFont');
+    } else if (settings.gymNameFontFamily && settings.gymNameFontFamily !== 'custom') {
+      loadGoogleFont(settings.gymNameFontFamily);
+    }
 
-  // Slogan font
-  if (settings.customSloganFontUrl) {
-    injectCustomFontFace(settings.customSloganFontUrl, 'GymCustomSloganFont');
-  } else if (settings.sloganFontFamily && settings.sloganFontFamily !== 'custom') {
-    loadGoogleFont(settings.sloganFontFamily);
+    // Slogan font
+    if (settings.customSloganFontUrl) {
+      injectCustomFontFace(settings.customSloganFontUrl, 'GymCustomSloganFont');
+    } else if (settings.sloganFontFamily && settings.sloganFontFamily !== 'custom') {
+      loadGoogleFont(settings.sloganFontFamily);
+    }
+  } catch (err) {
+    console.warn('[applyBrandingFonts] Font application warning:', err);
   }
 }
 
