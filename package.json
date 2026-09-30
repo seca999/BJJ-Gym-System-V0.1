@@ -1,11 +1,16 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.2.4",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
+    "prebuild": "node scripts/bump_version.js",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "bump": "node scripts/bump_version.js",
+    "version:bump": "node scripts/bump_version.js",
+    "push": "node scripts/bump_version.js && git add -A && git commit -m \"Update build\" && git push origin main",
+    "postinstall": "node scripts/setup_hooks.js",
     "start": "node dist/server.cjs",
     "preview": "vite preview --port=5555 --host=0.0.0.0",
     "clean": "rm -rf dist server.js",

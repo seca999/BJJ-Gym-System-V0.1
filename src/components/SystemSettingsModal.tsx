@@ -443,9 +443,14 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
       setUpdateCheckResult({ checked: true, release: res.release, error: res.error });
       if (res.versions && res.versions.length > 0) {
         setAvailableVersions(res.versions);
-        setNextVersion(res.versions[0]);
-        setUserSuccess(`Discovered ${res.versions.length} release/commit(s) on GitHub! Latest is ${res.versions[0].version}.`);
-        setTimeout(() => setUserSuccess(null), 4000);
+        const top = res.versions[0];
+        setNextVersion(top);
+        if (top.isNewer) {
+          setUserSuccess(`New update found! Version Code ${top.versionCode || top.version} is available to install.`);
+        } else {
+          setUserSuccess(`No new updates found on GitHub. Your academy system is all up to date!`);
+        }
+        setTimeout(() => setUserSuccess(null), 5000);
       } else if (res.error) {
         setUserError(res.error);
         setTimeout(() => setUserError(null), 5000);
@@ -1669,6 +1674,33 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
               {/* Real Current Version vs Next Version Comparison (No dropdown selection to install) */}
               {nextVersion ? (
                 <div className="space-y-5 animate-in fade-in duration-200">
+                  {/* ALL UP TO DATE BANNER (WHEN NO UPDATES AVAILABLE) */}
+                  {!nextVersion.isNewer && (
+                    <div className="p-4 bg-emerald-950/40 border border-emerald-500/50 rounded-2xl flex items-center justify-between gap-3 shadow-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30 shrink-0">
+                          <CheckCircle2 className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-sm font-black text-white">
+                              All Up to Date — No New Updates Found
+                            </h4>
+                            <span className="px-2 py-0.5 text-[9px] font-mono font-black uppercase bg-emerald-500 text-stone-950 rounded">
+                              Running Latest Code
+                            </span>
+                          </div>
+                          <p className="text-xs text-emerald-300/80 mt-0.5">
+                            Your academy system is currently running the newest release (Version Code {APP_VERSION_INFO.versionCode || 103}). There are no new updates on GitHub.
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[11px] font-mono text-emerald-400 font-bold hidden sm:inline-block bg-emerald-950/80 px-3 py-1.5 rounded-xl border border-emerald-800 shrink-0">
+                        ✔ 100% Up to Date
+                      </span>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {/* CARD 1: CURRENT VERSION */}
                     <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
@@ -1688,6 +1720,11 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                             <h5 className="text-base font-black text-white font-mono">
                               v{APP_VERSION_INFO.version}
                             </h5>
+                            {APP_VERSION_INFO.versionCode && (
+                              <span className="px-2 py-0.5 text-[10px] font-mono font-black uppercase bg-stone-800 text-amber-400 border border-amber-500/40 rounded">
+                                Version Code: {APP_VERSION_INFO.versionCode}
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-stone-300 font-medium mt-1">
                             {APP_VERSION_INFO.releaseName}
@@ -1732,8 +1769,17 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                               ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
                               : 'bg-stone-800 text-stone-300 border-stone-700'
                           }`}>
-                            <Sparkles className="w-3 h-3 text-emerald-400" />
-                            {nextVersion.isNewer ? 'Next Version (Update Available)' : 'Next Version (Up To Date)'}
+                            {nextVersion.isNewer ? (
+                              <>
+                                <Sparkles className="w-3 h-3 text-emerald-400" />
+                                <span>Next Version (Update Available)</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                <span>No New Updates (All Up to Date)</span>
+                              </>
+                            )}
                           </span>
                           <span className="text-[11px] font-mono text-emerald-400 font-bold">
                             {nextVersion.isLatest ? '⭐ Latest Master' : 'Next in Queue'}
@@ -1745,10 +1791,36 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                             <h5 className="text-base font-black text-white font-mono">
                               {nextVersion.version}
                             </h5>
-                            <span className="px-2 py-0.5 text-[9px] font-bold uppercase bg-amber-500 text-stone-950 rounded">
-                              Target Next
+                            {nextVersion.versionCode && (
+                              <span className="px-2 py-0.5 text-[10px] font-mono font-black uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded">
+                                Version Code: {nextVersion.versionCode}
+                              </span>
+                            )}
+                            <span className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded ${
+                              nextVersion.isNewer
+                                ? 'bg-amber-500 text-stone-950 font-black'
+                                : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            }`}>
+                              {nextVersion.isNewer ? 'Target Next' : 'All Up To Date'}
                             </span>
                           </div>
+                          {nextVersion.versionCode && APP_VERSION_INFO.versionCode && (
+                            <div className="mt-1">
+                              {nextVersion.versionCode > APP_VERSION_INFO.versionCode ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono font-black text-emerald-400 bg-emerald-950/80 border border-emerald-600/50 rounded-md">
+                                  <span>▲ New Version Code {nextVersion.versionCode} &gt; Current Code {APP_VERSION_INFO.versionCode}</span>
+                                </span>
+                              ) : nextVersion.versionCode === APP_VERSION_INFO.versionCode ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 rounded-md">
+                                  <span>✔ In Sync: Both running Version Code {nextVersion.versionCode}</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-400 bg-amber-950/40 border border-amber-800/60 rounded-md">
+                                  <span>★ Local Installed Code {APP_VERSION_INFO.versionCode} &gt; GitHub Repository (Code {nextVersion.versionCode})</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
                           <p className="text-xs text-stone-200 font-medium mt-1">
                             {nextVersion.releaseName}
                           </p>
@@ -1760,7 +1832,7 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                         {/* Next Version Improvements Highlights */}
                         <div className="space-y-1.5 pt-2 border-t border-stone-800">
                           <span className="text-[10px] font-bold uppercase text-emerald-400 tracking-wider block">
-                            Improvements in Next Version:
+                            {nextVersion.isNewer ? 'Improvements in Next Version:' : 'Latest Version Highlights:'}
                           </span>
                           <div className="space-y-1 max-h-36 overflow-y-auto">
                             {nextVersion.highlights && nextVersion.highlights.length > 0 ? (
@@ -1779,19 +1851,30 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
 
                       {/* Direct Deploy Button for Next Version */}
                       <div className="pt-2 border-t border-stone-800 space-y-2">
-                        <button
-                          type="button"
-                          onClick={handleDeployUpdate}
-                          disabled={isDeployingUpdate}
-                          className="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 disabled:opacity-60 text-stone-950 font-black rounded-xl text-xs inline-flex items-center justify-center gap-2 shadow-xl hover:shadow-2xl transition-all cursor-pointer active:scale-98"
-                        >
-                          <Rocket className="w-4 h-4" />
-                          <span>
-                            {isDeployingUpdate
-                              ? 'Installing Next Version...'
-                              : `Install & Deploy Next Version (${nextVersion.version})`}
-                          </span>
-                        </button>
+                        {nextVersion.isNewer ? (
+                          <button
+                            type="button"
+                            onClick={handleDeployUpdate}
+                            disabled={isDeployingUpdate}
+                            className="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 disabled:opacity-60 text-stone-950 font-black rounded-xl text-xs inline-flex items-center justify-center gap-2 shadow-xl hover:shadow-2xl transition-all cursor-pointer active:scale-98"
+                          >
+                            <Rocket className="w-4 h-4" />
+                            <span>
+                              {isDeployingUpdate
+                                ? 'Installing Next Version...'
+                                : `Install & Deploy Next Version (${nextVersion.versionCode ? `Code ${nextVersion.versionCode}` : nextVersion.version})`}
+                            </span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            className="w-full py-3 bg-stone-900 border border-stone-800 text-stone-400 font-bold rounded-xl text-xs inline-flex items-center justify-center gap-2 cursor-not-allowed opacity-90 select-none"
+                          >
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                            <span>No New Updates — System is All Up to Date</span>
+                          </button>
+                        )}
                         <div className="flex items-center justify-between text-[10px] text-stone-400 font-mono">
                           <span>SHA: {nextVersion.commitHash || nextVersion.version}</span>
                           <a
@@ -1851,14 +1934,23 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                                 }`}>
                                   {v.version}
                                 </span>
+                                {v.versionCode && (
+                                  <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase bg-stone-800 text-amber-400 border border-amber-500/30 rounded">
+                                    Code {v.versionCode}
+                                  </span>
+                                )}
                                 {isNext && (
-                                  <span className="px-1.5 py-0.5 text-[9px] font-black uppercase bg-emerald-950 text-emerald-300 border border-emerald-600/60 rounded">
-                                    Next Version
+                                  <span className={`px-1.5 py-0.5 text-[9px] font-black uppercase rounded border ${
+                                    v.isNewer
+                                      ? 'bg-emerald-950 text-emerald-300 border-emerald-600/60'
+                                      : 'bg-stone-800 text-stone-300 border-stone-700'
+                                  }`}>
+                                    {v.isNewer ? '▲ Next Version (Newer)' : 'Latest on GitHub'}
                                   </span>
                                 )}
                                 {isCurrent && (
                                   <span className="px-1.5 py-0.5 text-[9px] font-black uppercase bg-amber-950 text-amber-300 border border-amber-600/60 rounded">
-                                    Current Installed
+                                    ● Current Installed
                                   </span>
                                 )}
                                 <h5 className="text-xs font-bold text-white">

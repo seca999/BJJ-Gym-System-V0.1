@@ -10,6 +10,8 @@ import { addAuditLog } from './auditLogger';
 
 export interface GitHubReleaseInfo {
   version: string;
+  versionCode?: number;
+  buildNumber?: string;
   releaseTag: string;
   releaseName: string;
   publishedAt: string;
@@ -21,6 +23,7 @@ export interface GitHubReleaseInfo {
   highlights: string[];
   author?: string;
   isLatest?: boolean;
+  remoteVersionData?: any;
 }
 
 export interface DeploymentProgress {
@@ -188,6 +191,20 @@ export async function checkForGitHubUpdates(
       console.warn('Could not fetch tags:', e);
     }
 
+    // 2.5 Fetch remote version/version.json from the repository branch to get exact remote versionCode
+    let remoteVersionJson: any = null;
+    try {
+      const rawRes = await fetch(
+        `https://raw.githubusercontent.com/${targetRepo}/${targetBranch}/version/version.json?t=${Date.now()}`,
+        { cache: 'no-cache' }
+      );
+      if (rawRes.ok) {
+        remoteVersionJson = await rawRes.json();
+      }
+    } catch (e) {
+      console.warn('Could not fetch raw version.json:', e);
+    }
+
     // 3. Fetch real commits on target branch (live commit history as selectable deployable versions)
     try {
       const commitsRes = await fetch(
@@ -199,17 +216,16 @@ export async function checkForGitHubUpdates(
       if (commitsRes.ok) {
         const commitsData = await commitsRes.json();
         if (Array.isArray(commitsData)) {
+          const currentCode = typeof APP_VERSION_INFO.versionCode === 'number' ? APP_VERSION_INFO.versionCode : 105;
+          const remoteCode = typeof remoteVersionJson?.versionCode === 'number'
+            ? remoteVersionJson.versionCode
+            : (remoteVersionJson?.buildNumber ? parseInt(remoteVersionJson.buildNumber.split('.').pop() || '', 10) : undefined);
+
           commitsData.forEach((c: any, index: number) => {
             const fullSha = c.sha || '';
             const shortSha = fullSha.substring(0, 7);
             const fullMessage = c.commit?.message || 'Update commit';
             const firstLine = fullMessage.split('\n')[0].trim();
-            const otherLines = fullMessage
-              .split('\n')
-              .slice(1)
-              .map((l: string) => l.trim())
-              .filter((l: string) => l.length > 0 && (l.startsWith('-') || l.startsWith('*')))
-              .map((l: string) => l.replace(/^[-*]\s*/, ''));
 
             const commitDate = c.commit?.committer?.date || c.commit?.author?.date || new Date().toISOString();
             const author = c.author?.login || c.commit?.author?.name || 'Developer';
@@ -228,19 +244,74 @@ export async function checkForGitHubUpdates(
               ? bulletPoints
               : allLines.slice(0, 4);
 
+            // Determine if top commit / remote version is newer than current installed code
+            let isNewer = false;
+            if (index === 0) {
+              const cfg = getUpdateConfig();
+              const commitTime = new Date(commitDate).getTime();
+              const localTime = new Date(APP_VERSION_INFO.buildTimestamp).getTime();
+
+              if (typeof remoteCode === 'number' && !isNaN(remoteCode)) {
+                if (remoteCode > currentCode) {
+                  isNewer = true;
+                } else if (remoteCode < currentCode) {
+                  isNewer = false;
+                } else {
+                  // Exactly equal versionCode: check if top commit hash is already installed
+                  if (APP_VERSION_INFO.commitHash && (APP_VERSION_INFO.commitHash === shortSha || APP_VERSION_INFO.commitHash === fullSha)) {
+                    isNewer = false;
+                  } else if (cfg.lastDeployedVersion === shortSha || cfg.lastDeployedVersion === fullSha) {
+                    isNewer = false;
+                  } else {
+                    // Check if remote commit timestamp is significantly newer than local build timestamp
+                    isNewer = commitTime > (localTime + 120000);
+                  }
+                }
+              } else if (remoteVersionJson?.version && isVersionNewer(APP_VERSION_INFO.version, remoteVersionJson.version)) {
+                isNewer = true;
+              } else if (APP_VERSION_INFO.commitHash && (APP_VERSION_INFO.commitHash === shortSha || APP_VERSION_INFO.commitHash === fullSha)) {
+                isNewer = false;
+              } else if (cfg.lastDeployedVersion === shortSha || cfg.lastDeployedVersion === fullSha) {
+                isNewer = false;
+              } else if (APP_VERSION_INFO.buildNumber && APP_VERSION_INFO.buildNumber === (remoteVersionJson?.buildNumber || shortSha)) {
+                isNewer = false;
+              } else {
+                // If remote has a different commit, only mark newer if its commit date is newer than local build timestamp
+                isNewer = commitTime > (localTime + 120000);
+              }
+            }
+
+            // Top commit receives remote version.json metadata if available
+            const displayVersion = (index === 0 && remoteVersionJson?.version)
+              ? `v${remoteVersionJson.version}`
+              : shortSha;
+
+            const itemVersionCode = index === 0
+              ? (typeof remoteCode === 'number' && !isNaN(remoteCode) ? remoteCode : undefined)
+              : undefined;
+
+            const itemBuildNumber = index === 0 && remoteVersionJson?.buildNumber
+              ? remoteVersionJson.buildNumber
+              : shortSha;
+
             collectedVersions.push({
-              version: shortSha,
+              version: displayVersion,
+              versionCode: itemVersionCode,
+              buildNumber: itemBuildNumber,
               releaseTag: `commit-${shortSha}`,
               releaseName: firstLine,
               publishedAt: commitDate,
               body: fullMessage,
               htmlUrl: c.html_url || `https://github.com/${targetRepo}/commit/${fullSha}`,
-              isNewer: index === 0, // Top commit is the newest/next version
+              isNewer,
               commitHash: fullSha,
               downloadUrl: `https://github.com/${targetRepo}/archive/${fullSha}.zip`,
-              highlights: highlightsList.length > 0 ? highlightsList : [firstLine],
+              highlights: (index === 0 && remoteVersionJson?.changelog?.length)
+                ? remoteVersionJson.changelog.slice(0, 5)
+                : (highlightsList.length > 0 ? highlightsList : [firstLine]),
               author,
               isLatest: index === 0,
+              remoteVersionData: index === 0 ? remoteVersionJson : undefined,
             });
           });
         }

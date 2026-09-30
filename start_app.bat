@@ -51,7 +51,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command ^
   "  if (Test-Path $liveEnv) {" ^
   "    Copy-Item -Path $liveEnv -Destination $dbBackup -Force -ErrorAction SilentlyContinue;" ^
   "  };" ^
-  "  $itemsToKeep = @('node_modules', 'database', '.env', '.git', 'start_app.bat', 'stop_app.bat');" ^
+  "  $itemsToKeep = @('node_modules', 'database', '.env', '.git', 'start_app.bat', 'stop_app.bat', 'push_to_github.bat', 'push_to_github.sh');" ^
   "  Get-ChildItem -Path $targetDir -Force -ErrorAction SilentlyContinue | ForEach-Object {" ^
   "    if ($itemsToKeep -notcontains $_.Name) {" ^
   "      Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue;" ^
