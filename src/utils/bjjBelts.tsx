@@ -593,19 +593,20 @@ export const BeltBadge: React.FC<BeltBadgeProps> = ({
   const isBlack = belt === 'Black';
 
   // Strictly fixed uniform dimensions so every student badge is 100% identically sized
-  // sm: fixed w-[158px], h-[26px] — ample width so even 12-char compound names (ORANGE-BLACK, ORANGE-WHITE) fit completely
-  // md: fixed w-[180px], h-[28px]
-  // lg: fixed w-[215px], h-[32px]
-  const widthClass = size === 'sm' ? 'w-[158px]' : size === 'lg' ? 'w-[215px]' : 'w-[180px]';
-  const heightClass = size === 'sm' ? 'h-[26px]' : size === 'lg' ? 'h-[32px]' : 'h-[28px]';
-  const fontSize = size === 'sm' ? '9.5px' : size === 'lg' ? '12px' : '10.5px';
-  const textPadding = size === 'sm' ? 'px-2' : size === 'lg' ? 'px-3' : 'px-2.5';
+  // Generous dimensions: not compact, ample width and height so all compound belt names fit completely
+  // sm: fixed w-[172px], h-[30px] — ample width and height with clear 11px font
+  // md: fixed w-[195px], h-[32px]
+  // lg: fixed w-[230px], h-[36px]
+  const widthClass = size === 'sm' ? 'w-[172px]' : size === 'lg' ? 'w-[230px]' : 'w-[195px]';
+  const heightClass = size === 'sm' ? 'h-[30px]' : size === 'lg' ? 'h-[36px]' : 'h-[32px]';
+  const fontSize = size === 'sm' ? '11px' : size === 'lg' ? '13.5px' : '12px';
+  const textPadding = size === 'sm' ? 'px-3' : size === 'lg' ? 'px-4' : 'px-3.5';
 
   // Explicit pixel dimensions for rank sleeve and strictly fixed stripe slots
-  const sleeveWidth = size === 'sm' ? '36px' : size === 'lg' ? '50px' : '42px';
+  const sleeveWidth = size === 'sm' ? '38px' : size === 'lg' ? '52px' : '44px';
   const sleevePadding = size === 'sm' ? 'px-1.5' : size === 'lg' ? 'px-2' : 'px-1.5';
-  const stripeGap = size === 'sm' ? '2.5px' : size === 'lg' ? '4px' : '3px';
-  const stripeWidth = size === 'sm' ? '2.5px' : size === 'lg' ? '4px' : '3px';
+  const stripeGap = size === 'sm' ? '3px' : size === 'lg' ? '4px' : '3.5px';
+  const stripeWidth = size === 'sm' ? '3px' : size === 'lg' ? '4.5px' : '3.5px';
 
   return (
     <div className="inline-flex items-center gap-1.5 shrink-0">
@@ -631,7 +632,7 @@ export const BeltBadge: React.FC<BeltBadgeProps> = ({
 
         {/* Full Belt Rank Name - 100% visible, never cut off or truncated */}
         <span
-          className={`relative z-10 ${textPadding} font-black tracking-tight uppercase whitespace-nowrap drop-shadow-xs text-left flex-1 min-w-0 ${config.textColor}`}
+          className={`relative z-10 ${textPadding} font-black tracking-normal uppercase whitespace-nowrap drop-shadow-xs text-left shrink-0 ${config.textColor}`}
           style={{ fontSize }}
         >
           {belt}

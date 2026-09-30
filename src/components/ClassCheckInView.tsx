@@ -723,6 +723,10 @@ export const ClassCheckInView: React.FC<ClassCheckInViewProps> = ({
 
   // Get specific time for selected day
   const getClassTimeForCurrentDay = (c: ClassSession) => {
+    // If the class comes from the matboard with a scheduled time range, prioritize that time
+    if (c.time && c.time !== 'Scheduled') {
+      return c.time;
+    }
     const day = activeDayFilter === 'TODAY' ? selectedDayInfo.dayFull : activeDayFilter;
     if (c.daySchedule && c.daySchedule[day]) {
       return c.daySchedule[day];

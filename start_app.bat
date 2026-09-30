@@ -37,11 +37,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command ^
   "};" ^
   "$shouldSyncFromCurrent = $false;" ^
   "if (($CurrentDir -ne $CodeDir) -and (Test-Path (Join-Path $CurrentDir 'package.json')) -and (Test-Path (Join-Path $CurrentDir 'src'))) {" ^
-  "  $currentStampFile = Join-Path $CurrentDir 'package.json';" ^
-  "  $codeStampFile = Join-Path $CodeDir 'package.json';" ^
-  "  if ((-not (Test-Path $codeStampFile)) -or ((Get-Item $currentStampFile).LastWriteTimeUtc -gt (Get-Item $codeStampFile).LastWriteTimeUtc)) {" ^
-  "    $shouldSyncFromCurrent = $true;" ^
-  "  }" ^
+  "  $shouldSyncFromCurrent = $true;" ^
   "};" ^
   "$cleanOldSource = {" ^
   "  param($targetDir);" ^

@@ -249,6 +249,8 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
   const dragMovedRef = useRef(false);
   const dragEndTimeRef = useRef(0);
   const rafIdRef = useRef<number | null>(null);
+  const latestClientYRef = useRef<number>(0);
+  const rafPendingRef = useRef<boolean>(false);
 
   // High-performance smooth mouse move and up listeners for 5-minute top/bottom stretching & class moving
   React.useEffect(() => {
@@ -260,6 +262,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
 
     const handleMouseMove = (e: MouseEvent) => {
       e.preventDefault();
+      latestClientYRef.current = e.clientY;
       const op = activeDragOpRef.current;
       if (!op) return;
 
@@ -268,53 +271,55 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
         dragMovedRef.current = true;
       }
 
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
+      if (!rafPendingRef.current) {
+        rafPendingRef.current = true;
+        rafIdRef.current = requestAnimationFrame(() => {
+          rafPendingRef.current = false;
+          const currentOp = activeDragOpRef.current;
+          if (!currentOp) return;
+
+          const currentDeltaY = latestClientYRef.current - currentOp.startY;
+          // 58px per 30 minutes = ~1.933px per minute. Round to nearest 5-minute increment.
+          const pxPerMinute = 58 / 30;
+          const rawDeltaMins = currentDeltaY / pxPerMinute;
+          const stepMins = Math.round(rawDeltaMins / 5) * 5;
+
+          let newStart = currentOp.currentStartMins;
+          let newEnd = currentOp.currentEndMins;
+
+          if (currentOp.mode === 'resize-start') {
+            // Dragging top handle: moving UP makes start earlier, DOWN makes start later
+            newStart = currentOp.initialStartMins + stepMins;
+            newStart = Math.max(firstSlotStartMins, Math.min(currentOp.initialEndMins - 15, newStart));
+            newStart = Math.round(newStart / 5) * 5;
+          } else if (currentOp.mode === 'resize-end') {
+            // Dragging bottom handle: moving DOWN makes end later, UP makes end earlier
+            newEnd = currentOp.initialEndMins + stepMins;
+            newEnd = Math.min(lastSlotEndMins, Math.max(currentOp.initialStartMins + 15, newEnd));
+            newEnd = Math.round(newEnd / 5) * 5;
+          } else if (currentOp.mode === 'move') {
+            // Dragging entire class card: shift both start and end together
+            const duration = currentOp.initialEndMins - currentOp.initialStartMins;
+            newStart = currentOp.initialStartMins + stepMins;
+            newStart = Math.max(firstSlotStartMins, Math.min(lastSlotEndMins - duration, newStart));
+            newStart = Math.round(newStart / 5) * 5;
+            newEnd = newStart + duration;
+          }
+
+          // Only trigger React state update if minute intervals actually changed
+          if (newStart !== currentOp.currentStartMins || newEnd !== currentOp.currentEndMins) {
+            currentOp.currentStartMins = newStart;
+            currentOp.currentEndMins = newEnd;
+            setActiveDragOp({ ...currentOp });
+          }
+        });
       }
-
-      rafIdRef.current = requestAnimationFrame(() => {
-        const currentOp = activeDragOpRef.current;
-        if (!currentOp) return;
-
-        // 58px per 30 minutes = ~1.933px per minute. Round to nearest 5-minute increment.
-        const pxPerMinute = 58 / 30;
-        const rawDeltaMins = deltaY / pxPerMinute;
-        const stepMins = Math.round(rawDeltaMins / 5) * 5;
-
-        let newStart = currentOp.currentStartMins;
-        let newEnd = currentOp.currentEndMins;
-
-        if (currentOp.mode === 'resize-start') {
-          // Dragging top handle: moving UP (negative deltaY) makes start time earlier, moving DOWN makes start time later
-          newStart = currentOp.initialStartMins + stepMins;
-          newStart = Math.max(firstSlotStartMins, Math.min(currentOp.initialEndMins - 15, newStart));
-          newStart = Math.round(newStart / 5) * 5;
-        } else if (currentOp.mode === 'resize-end') {
-          // Dragging bottom handle: moving DOWN (positive deltaY) makes end time later, moving UP makes end time earlier
-          newEnd = currentOp.initialEndMins + stepMins;
-          newEnd = Math.min(lastSlotEndMins, Math.max(currentOp.initialStartMins + 15, newEnd));
-          newEnd = Math.round(newEnd / 5) * 5;
-        } else if (currentOp.mode === 'move') {
-          // Dragging entire class card: shift both start and end time together
-          const duration = currentOp.initialEndMins - currentOp.initialStartMins;
-          newStart = currentOp.initialStartMins + stepMins;
-          newStart = Math.max(firstSlotStartMins, Math.min(lastSlotEndMins - duration, newStart));
-          newStart = Math.round(newStart / 5) * 5;
-          newEnd = newStart + duration;
-        }
-
-        // Only trigger React state update if minute intervals actually changed
-        if (newStart !== currentOp.currentStartMins || newEnd !== currentOp.currentEndMins) {
-          currentOp.currentStartMins = newStart;
-          currentOp.currentEndMins = newEnd;
-          setActiveDragOp({ ...currentOp });
-        }
-      });
     };
 
     const handleMouseUp = () => {
       if (rafIdRef.current) {
         cancelAnimationFrame(rafIdRef.current);
+        rafPendingRef.current = false;
       }
 
       document.body.style.cursor = '';
@@ -1203,7 +1208,7 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                                 handleOpenAssignDropdown(slot.id, day);
                               }
                             }}
-                            className={`p-1.5 border-r border-b border-stone-800/80 align-top transition-all relative select-none overflow-visible ${
+                            className={`p-1.5 border-r border-b border-stone-800/80 align-top transition-colors relative select-none overflow-visible ${
                               isLight
                                 ? 'bg-stone-100/40'
                                 : 'bg-stone-950/40'
@@ -1218,18 +1223,20 @@ export const ScheduleBoardView: React.FC<ScheduleBoardViewProps> = ({
                               
                               {/* EXACT PROPORTIONALLY POSITIONED CLASS CARD */}
                               <div
-                                className={`absolute inset-x-0 rounded-xl transition-[border,box-shadow,background-color] flex flex-col justify-between overflow-visible group select-none ${
+                                className={`absolute inset-x-0 rounded-xl flex flex-col justify-between overflow-visible group select-none ${
                                   isDraggingThisCell
                                     ? 'ring-2 ring-red-500 bg-red-500/30 border-2 border-red-500 z-40 shadow-2xl cursor-grabbing'
                                     : isLight
-                                    ? 'matboard-cell-occupied border border-stone-300 hover:border-red-500/80 hover:shadow-md shadow-xs'
-                                    : 'text-white hover:brightness-110 shadow-lg border border-white/10 hover:border-red-500/50'
+                                    ? 'matboard-cell-occupied border border-stone-300 hover:border-red-500/80 hover:shadow-md shadow-xs transition-[border,box-shadow,background-color]'
+                                    : 'text-white hover:brightness-110 shadow-lg border border-white/10 hover:border-red-500/50 transition-[border,box-shadow,background-color]'
                                 }`}
                                 style={{
                                   top: `${topPx}px`,
                                   height: `${heightPx}px`,
                                   backgroundColor: slotBg,
                                   borderLeft: isLight ? `4px solid ${matAccentColor}` : `3px solid ${matAccentColor}`,
+                                  willChange: isDraggingThisCell ? 'top, height' : undefined,
+                                  transition: isDraggingThisCell ? 'none' : undefined,
                                 }}
                                 onClick={(e) => {
                                   // Prevent clicks on card from opening edit modal (use edit button instead)

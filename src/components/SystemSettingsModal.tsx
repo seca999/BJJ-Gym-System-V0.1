@@ -47,7 +47,8 @@ import {
   Eye,
   CheckCircle2,
   HardDrive,
-  GitPullRequest
+  GitPullRequest,
+  ArrowRight
 } from 'lucide-react';
 import { APP_VERSION_INFO, getFormattedVersionTag } from '../version';
 import { 
@@ -234,7 +235,7 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const [updateCheckResult, setUpdateCheckResult] = useState<{ checked: boolean; release?: GitHubReleaseInfo; error?: string } | null>(null);
   const [availableVersions, setAvailableVersions] = useState<GitHubReleaseInfo[]>([]);
-  const [selectedVersion, setSelectedVersion] = useState<GitHubReleaseInfo | null>(null);
+  const [nextVersion, setNextVersion] = useState<GitHubReleaseInfo | null>(null);
   const [isDeployingUpdate, setIsDeployingUpdate] = useState(false);
   const [deploymentProgress, setDeploymentProgress] = useState<DeploymentProgress | null>(null);
 
@@ -442,8 +443,8 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
       setUpdateCheckResult({ checked: true, release: res.release, error: res.error });
       if (res.versions && res.versions.length > 0) {
         setAvailableVersions(res.versions);
-        setSelectedVersion(res.versions[0]);
-        setUserSuccess(`Discovered ${res.versions.length} live version(s) on GitHub!`);
+        setNextVersion(res.versions[0]);
+        setUserSuccess(`Discovered ${res.versions.length} release/commit(s) on GitHub! Latest is ${res.versions[0].version}.`);
         setTimeout(() => setUserSuccess(null), 4000);
       } else if (res.error) {
         setUserError(res.error);
@@ -456,9 +457,9 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
     }
   };
 
-  // Deploy Update action
+  // Deploy Update action (targets the Next / New Version directly)
   const handleDeployUpdate = async () => {
-    const targetToDeploy = selectedVersion || updateCheckResult?.release;
+    const targetToDeploy = nextVersion || updateCheckResult?.release;
     if (!targetToDeploy) return;
     setIsDeployingUpdate(true);
     try {
@@ -1665,104 +1666,259 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* Version Selector (When versions are retrieved) */}
-              {availableVersions.length > 0 && (
-                <div className="bg-stone-950 border border-stone-800 rounded-2xl p-5 space-y-4 animate-in fade-in">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-stone-800">
-                    <div>
-                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                        <Layers className="w-4 h-4 text-emerald-400" />
-                        Choose Version / Commit to Deploy ({availableVersions.length} Available)
-                      </h4>
-                      <p className="text-xs text-stone-400">
-                        Select any specific release or commit from GitHub to test or deploy live:
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Dropdown / Quick Selector */}
-                  <div className="space-y-2">
-                    <label className="block text-[11px] font-bold text-stone-300 uppercase">
-                      Select Target Version to Install:
-                    </label>
-                    <select
-                      value={selectedVersion?.version || ''}
-                      onChange={(e) => {
-                        const found = availableVersions.find((v) => v.version === e.target.value);
-                        if (found) setSelectedVersion(found);
-                      }}
-                      className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white focus:outline-none focus:border-amber-500 cursor-pointer"
-                    >
-                      {availableVersions.map((v) => (
-                        <option key={v.version} value={v.version}>
-                          {v.isLatest ? '⭐ [LATEST] ' : ''}{v.version} — {v.releaseName} ({new Date(v.publishedAt).toLocaleDateString()})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Selected Version Detail Card */}
-                  {selectedVersion && (
-                    <div className="bg-stone-900/90 border border-emerald-500/40 rounded-xl p-4 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-stone-800">
-                        <div className="flex items-center gap-2.5">
-                          <div className="p-2 bg-emerald-500/20 border border-emerald-500/30 rounded-lg text-emerald-400">
-                            <Sparkles className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h5 className="text-xs font-black text-white">{selectedVersion.releaseName}</h5>
-                              <span className="px-1.5 py-0.5 text-[10px] font-mono font-black uppercase bg-emerald-500 text-stone-950 rounded">
-                                {selectedVersion.version}
-                              </span>
-                              {selectedVersion.isLatest && (
-                                <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase bg-amber-500 text-stone-950 rounded">
-                                  Latest Master
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3 text-[11px] text-stone-400 mt-0.5">
-                              <span>Author: <strong className="text-stone-300">{selectedVersion.author || 'seca999'}</strong></span>
-                              <span>•</span>
-                              <span>Date: {new Date(selectedVersion.publishedAt).toLocaleString()}</span>
-                            </div>
-                          </div>
+              {/* Real Current Version vs Next Version Comparison (No dropdown selection to install) */}
+              {nextVersion ? (
+                <div className="space-y-5 animate-in fade-in duration-200">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* CARD 1: CURRENT VERSION */}
+                    <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-stone-800 text-stone-300 rounded-full border border-stone-700 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-stone-400" />
+                            Current Installed Version
+                          </span>
+                          <span className="text-[11px] font-mono text-stone-400">
+                            Build {APP_VERSION_INFO.buildNumber}
+                          </span>
                         </div>
 
-                        {/* Deploy Button */}
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h5 className="text-base font-black text-white font-mono">
+                              v{APP_VERSION_INFO.version}
+                            </h5>
+                          </div>
+                          <p className="text-xs text-stone-300 font-medium mt-1">
+                            {APP_VERSION_INFO.releaseName}
+                          </p>
+                          <p className="text-[11px] text-stone-400 mt-0.5">
+                            Build Date: {new Date(APP_VERSION_INFO.buildTimestamp).toLocaleDateString()} • Branch: {APP_VERSION_INFO.gitBranch}
+                          </p>
+                        </div>
+
+                        {/* Current Installed Features / Highlights */}
+                        <div className="space-y-1.5 pt-2 border-t border-stone-800">
+                          <span className="text-[10px] font-bold uppercase text-stone-400 tracking-wider block">
+                            Current Version Highlights:
+                          </span>
+                          <div className="space-y-1">
+                            {APP_VERSION_INFO.changelog.slice(0, 4).map((item, i) => (
+                              <div key={i} className="flex items-start gap-2 text-xs text-stone-300">
+                                <Check className="w-3.5 h-3.5 text-stone-400 shrink-0 mt-0.5" />
+                                <span>{item}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 text-[11px] text-stone-400 font-mono flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Currently active in local environment</span>
+                      </div>
+                    </div>
+
+                    {/* CARD 2: NEXT VERSION (TARGET NEXT RELEASE / COMMIT) */}
+                    <div className={`bg-stone-900/90 border rounded-2xl p-5 space-y-4 flex flex-col justify-between ${
+                      nextVersion.isNewer
+                        ? 'border-emerald-500/50 shadow-xl shadow-emerald-950/20'
+                        : 'border-stone-800'
+                    }`}>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-full border flex items-center gap-1.5 ${
+                            nextVersion.isNewer
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
+                              : 'bg-stone-800 text-stone-300 border-stone-700'
+                          }`}>
+                            <Sparkles className="w-3 h-3 text-emerald-400" />
+                            {nextVersion.isNewer ? 'Next Version (Update Available)' : 'Next Version (Up To Date)'}
+                          </span>
+                          <span className="text-[11px] font-mono text-emerald-400 font-bold">
+                            {nextVersion.isLatest ? '⭐ Latest Master' : 'Next in Queue'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h5 className="text-base font-black text-white font-mono">
+                              {nextVersion.version}
+                            </h5>
+                            <span className="px-2 py-0.5 text-[9px] font-bold uppercase bg-amber-500 text-stone-950 rounded">
+                              Target Next
+                            </span>
+                          </div>
+                          <p className="text-xs text-stone-200 font-medium mt-1">
+                            {nextVersion.releaseName}
+                          </p>
+                          <p className="text-[11px] text-stone-400 mt-0.5">
+                            Author: <strong className="text-stone-300">{nextVersion.author || 'seca999'}</strong> • Published: {new Date(nextVersion.publishedAt).toLocaleString()}
+                          </p>
+                        </div>
+
+                        {/* Next Version Improvements Highlights */}
+                        <div className="space-y-1.5 pt-2 border-t border-stone-800">
+                          <span className="text-[10px] font-bold uppercase text-emerald-400 tracking-wider block">
+                            Improvements in Next Version:
+                          </span>
+                          <div className="space-y-1 max-h-36 overflow-y-auto">
+                            {nextVersion.highlights && nextVersion.highlights.length > 0 ? (
+                              nextVersion.highlights.map((h, i) => (
+                                <div key={i} className="flex items-start gap-2 text-xs text-stone-200">
+                                  <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                                  <span>{h}</span>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="text-xs text-stone-300 italic">{nextVersion.releaseName}</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Direct Deploy Button for Next Version */}
+                      <div className="pt-2 border-t border-stone-800 space-y-2">
                         <button
                           type="button"
                           onClick={handleDeployUpdate}
                           disabled={isDeployingUpdate}
-                          className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-stone-950 font-black rounded-xl text-xs inline-flex items-center gap-2 shadow-xl hover:shadow-2xl transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50"
+                          className="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 disabled:opacity-60 text-stone-950 font-black rounded-xl text-xs inline-flex items-center justify-center gap-2 shadow-xl hover:shadow-2xl transition-all cursor-pointer active:scale-98"
                         >
                           <Rocket className="w-4 h-4" />
-                          <span>{isDeployingUpdate ? 'Installing...' : `Install & Deploy Version ${selectedVersion.version}`}</span>
+                          <span>
+                            {isDeployingUpdate
+                              ? 'Installing Next Version...'
+                              : `Install & Deploy Next Version (${nextVersion.version})`}
+                          </span>
                         </button>
-                      </div>
-
-                      {/* Commit details / Highlights */}
-                      <div className="text-xs space-y-1">
-                        <span className="text-[10px] font-bold uppercase text-stone-400 block">Commit Message / Highlights:</span>
-                        <div className="p-2.5 bg-stone-950 rounded-lg border border-stone-800 font-mono text-[11px] text-stone-300 whitespace-pre-line leading-relaxed max-h-36 overflow-y-auto">
-                          {selectedVersion.body}
+                        <div className="flex items-center justify-between text-[10px] text-stone-400 font-mono">
+                          <span>SHA: {nextVersion.commitHash || nextVersion.version}</span>
+                          <a
+                            href={nextVersion.htmlUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-amber-400 hover:underline flex items-center gap-1 font-bold"
+                          >
+                            <span>Inspect on GitHub</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                         </div>
                       </div>
-
-                      <div className="flex items-center justify-between text-[11px] text-stone-400 pt-1">
-                        <span>SHA: <strong className="font-mono text-stone-300">{selectedVersion.commitHash || selectedVersion.version}</strong></span>
-                        <a
-                          href={selectedVersion.htmlUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-amber-400 hover:underline flex items-center gap-1 font-bold"
-                        >
-                          <span>View on GitHub</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
                     </div>
-                  )}
+                  </div>
+
+                  {/* SECTION 2: IMPROVEMENTS & DIFFERENCES BETWEEN EACH VERSION */}
+                  <div className="bg-stone-950 border border-stone-800 rounded-2xl p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-stone-800">
+                      <div>
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                          <Layers className="w-4 h-4 text-amber-400" />
+                          Version Improvements & Differences Between Each Version
+                        </h4>
+                        <p className="text-xs text-stone-400">
+                          Detailed highlight of what was improved and added across each version:
+                        </p>
+                      </div>
+                      <span className="px-2.5 py-1 text-[11px] font-mono font-bold text-amber-400 bg-amber-950/60 border border-amber-800/80 rounded-lg">
+                        {availableVersions.length} versions tracked
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {availableVersions.map((v, idx) => {
+                        const isNext = idx === 0;
+                        const isCurrent = v.version === APP_VERSION_INFO.buildNumber || APP_VERSION_INFO.version.includes(v.version);
+                        return (
+                          <div
+                            key={v.version}
+                            className={`p-4 rounded-xl border transition-all ${
+                              isNext
+                                ? 'bg-emerald-950/20 border-emerald-500/40'
+                                : isCurrent
+                                ? 'bg-amber-950/20 border-amber-500/40'
+                                : 'bg-stone-900/60 border-stone-800 hover:border-stone-700'
+                            }`}
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-stone-800/60">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black uppercase ${
+                                  isNext
+                                    ? 'bg-emerald-500 text-stone-950'
+                                    : isCurrent
+                                    ? 'bg-amber-500 text-stone-950'
+                                    : 'bg-stone-800 text-stone-300'
+                                }`}>
+                                  {v.version}
+                                </span>
+                                {isNext && (
+                                  <span className="px-1.5 py-0.5 text-[9px] font-black uppercase bg-emerald-950 text-emerald-300 border border-emerald-600/60 rounded">
+                                    Next Version
+                                  </span>
+                                )}
+                                {isCurrent && (
+                                  <span className="px-1.5 py-0.5 text-[9px] font-black uppercase bg-amber-950 text-amber-300 border border-amber-600/60 rounded">
+                                    Current Installed
+                                  </span>
+                                )}
+                                <h5 className="text-xs font-bold text-white">
+                                  {v.releaseName}
+                                </h5>
+                              </div>
+
+                              <div className="flex items-center gap-3 text-[11px] text-stone-400 font-mono shrink-0">
+                                <span>{new Date(v.publishedAt).toLocaleDateString()}</span>
+                                <a
+                                  href={v.htmlUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-amber-400 hover:underline flex items-center gap-1"
+                                >
+                                  <span>Commit</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              </div>
+                            </div>
+
+                            {/* Specific Improvements of this Version */}
+                            <div className="pt-2 space-y-1.5">
+                              <span className="text-[10px] font-bold uppercase text-stone-400 tracking-wider block">
+                                Improvements in this version:
+                              </span>
+                              <div className="space-y-1">
+                                {v.highlights && v.highlights.length > 0 ? (
+                                  v.highlights.map((h, hIdx) => (
+                                    <div key={hIdx} className="flex items-start gap-2 text-xs text-stone-300">
+                                      <span className="text-amber-400 font-bold">•</span>
+                                      <span>{h}</span>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="text-xs text-stone-400 italic">{v.body}</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Before checking updates: Initial view showing Current Version and Prompt to Check */
+                <div className="bg-stone-950 border border-stone-800 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-stone-800">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-amber-400" />
+                      <h4 className="text-sm font-bold text-white">Update Status & Target Next Version</h4>
+                    </div>
+                    <span className="text-xs text-stone-400 font-mono">
+                      Current: <strong className="text-white">v{APP_VERSION_INFO.version}</strong>
+                    </span>
+                  </div>
+                  <p className="text-xs text-stone-400">
+                    Click <strong className="text-amber-400">"Check for Updates Now"</strong> above to poll <strong className="text-stone-300 font-mono">{HARDCODED_REPO}</strong> for the next available version and see all improvements between versions.
+                  </p>
                 </div>
               )}
 

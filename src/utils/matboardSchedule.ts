@@ -208,10 +208,20 @@ export function getMatboardClassesForDay(
   dayCells.forEach((cell, idx) => {
     const slot = slotsMap.get(cell.slotId);
     const mat = matsMap.get(cell.matId || slot?.matId || '');
-    const timeRange =
-      slot?.timeRange ||
-      (cell.subtitle && cell.subtitle.includes(':') ? cell.subtitle.split('\n').pop() : '') ||
-      'Scheduled';
+
+    // Extract exact scheduled time: prioritize cell's custom stretched/dragged timeRange
+    let timeRange = cell.timeRange;
+    if (!timeRange && cell.subtitle) {
+      const timeLine = cell.subtitle.split('\n').find((l) => /\d{1,2}:\d{2}/.test(l));
+      if (timeLine) timeRange = timeLine.trim();
+    }
+    if (!timeRange && slot?.timeRange) {
+      timeRange = slot.timeRange;
+    }
+    if (!timeRange) {
+      timeRange = 'Scheduled';
+    }
+
     const roomName = mat?.name || 'Mat 01';
 
     // Prevent duplicate entries for exact same cell slot on the same day & mat

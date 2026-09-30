@@ -214,6 +214,20 @@ export async function checkForGitHubUpdates(
             const commitDate = c.commit?.committer?.date || c.commit?.author?.date || new Date().toISOString();
             const author = c.author?.login || c.commit?.author?.name || 'Developer';
 
+            // Extract bullet points or distinct improvement points from commit message
+            const allLines = fullMessage
+              .split('\n')
+              .map((l: string) => l.trim())
+              .filter((l: string) => l.length > 0);
+
+            const bulletPoints = allLines
+              .filter((l: string) => l.startsWith('-') || l.startsWith('*') || l.startsWith('•') || l.startsWith('+'))
+              .map((l: string) => l.replace(/^[-*•+]\s*/, '').trim());
+
+            const highlightsList = bulletPoints.length > 0
+              ? bulletPoints
+              : allLines.slice(0, 4);
+
             collectedVersions.push({
               version: shortSha,
               releaseTag: `commit-${shortSha}`,
@@ -221,10 +235,10 @@ export async function checkForGitHubUpdates(
               publishedAt: commitDate,
               body: fullMessage,
               htmlUrl: c.html_url || `https://github.com/${targetRepo}/commit/${fullSha}`,
-              isNewer: index === 0, // Top commit is newer than current build unless current is this exact sha
+              isNewer: index === 0, // Top commit is the newest/next version
               commitHash: fullSha,
               downloadUrl: `https://github.com/${targetRepo}/archive/${fullSha}.zip`,
-              highlights: otherLines.length > 0 ? otherLines : [firstLine],
+              highlights: highlightsList.length > 0 ? highlightsList : [firstLine],
               author,
               isLatest: index === 0,
             });

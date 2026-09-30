@@ -246,7 +246,7 @@ export function addMinutesToTime(timeStr: string, minutesToAdd: number): string 
 }
 
 /**
- * Parses a combined range string (e.g. "07:00 PM - 08:30 PM", "7:00-8:00 AM", "07:00 PM - 9 PM")
+ * Parses a combined range string (e.g. "07:00 PM - 08:30 PM", "7:00-8:00 AM", "07:00 PM - 9 PM", "(Coach)\n4:30-5:30 PM")
  */
 export function parseTimeRange(rangeStr: string): {
   start: string;
@@ -257,16 +257,41 @@ export function parseTimeRange(rangeStr: string): {
     return { start: '07:00 PM', end: '08:15 PM', duration: 75 };
   }
 
-  const parts = rangeStr.split(/[-–—to]+/).map((s) => s.trim());
+  // If multi-line (e.g. cell subtitle with coach name), find line containing time
+  let cleanStr = String(rangeStr).trim();
+  if (cleanStr.includes('\n')) {
+    const timeLine = cleanStr.split('\n').find((l) => /\d{1,2}:\d{2}/.test(l));
+    if (timeLine) cleanStr = timeLine.trim();
+  }
+  // Strip parenthetical notes like "(Rana Khalil)"
+  cleanStr = cleanStr.replace(/\(.*?\)/g, '').trim();
+
+  const parts = cleanStr.split(/[-–—to]+/).map((s) => s.trim());
   if (parts.length >= 2) {
     let startPart = parts[0];
     let endPart = parts[1];
 
-    // If start has no AM/PM but end does (e.g. "7:00 - 8:00 AM")
+    // If start has no AM/PM but end does (e.g. "4:30 - 5:30 PM")
     const endPeriodMatch = endPart.match(/(AM|PM)/i);
     const startPeriodMatch = startPart.match(/(AM|PM)/i);
     if (!startPeriodMatch && endPeriodMatch) {
-      startPart = `${startPart} ${endPeriodMatch[1]}`;
+      const startHourMatch = startPart.match(/^(\d{1,2})/);
+      const startHour = startHourMatch ? parseInt(startHourMatch[1], 10) : 0;
+      let period = endPeriodMatch[1].toUpperCase();
+      // If start hour is 8-11 and end is 12-1 PM, start was morning AM
+      if (period === 'PM' && startHour >= 8 && startHour <= 11) {
+        period = 'AM';
+      }
+      startPart = `${startPart} ${period}`;
+    } else if (!startPeriodMatch && !endPeriodMatch) {
+      // If no AM/PM specified at all (e.g. "4:30 - 5:30" or "6:00 - 7:00")
+      const startHourMatch = startPart.match(/^(\d{1,2})/);
+      const startHour = startHourMatch ? parseInt(startHourMatch[1], 10) : 0;
+      // In BJJ academies, classes 1:00-11:00 without explicit AM are PM afternoon/evening
+      if (startHour >= 1 && startHour <= 11) {
+        startPart = `${startPart} PM`;
+        endPart = `${endPart} PM`;
+      }
     }
 
     const start = normalizeTimeString(startPart);
@@ -276,7 +301,7 @@ export function parseTimeRange(rangeStr: string): {
     return { start, end, duration };
   }
 
-  const start = normalizeTimeString(rangeStr);
+  const start = normalizeTimeString(cleanStr);
   const end = addMinutesToTime(start, 75);
   return { start, end, duration: 75 };
 }
